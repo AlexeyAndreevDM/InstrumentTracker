@@ -1,23 +1,29 @@
 import sqlite3
-import os
-from datetime import datetime
+from PyQt6.QtCore import QMutex, QMutexLocker
 
 
-class Database:
-    def __init__(self, db_path="inventory.db"):
-        self.db_path = db_path
-        self.init_db()
+class DatabaseManager:
+    _instance = None
+    _mutex = QMutex()
 
-    def get_connection(self):
-        """Создание соединения с базой данных"""
-        return sqlite3.connect(self.db_path)
+    def __new__(cls):
+        with QMutexLocker(cls._mutex):
+            if cls._instance is None:
+                cls._instance = super(DatabaseManager, cls).__new__(cls)
+                cls._instance._init_db()
+            return cls._instance
 
-    def init_db(self):
-        """Инициализация базы данных и создание таблиц"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+    def _init_db(self):
+        """Инициализация базы данных"""
+        self.connection = sqlite3.connect('inventory.db', check_same_thread=False)
+        self.connection.execute("PRAGMA journal_mode=WAL")  # Включаем WAL режим для лучшей параллельности
+        self._create_tables()
+        self._populate_test_data()
 
-        # Таблица должностей
+    def _create_tables(self):
+        """Создание таблиц"""
+        cursor = self.connection.cursor()
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Positions (
                 position_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,7 +31,6 @@ class Database:
             )
         ''')
 
-        # Таблица сотрудников
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Employees (
                 employee_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +44,6 @@ class Database:
             )
         ''')
 
-        # Таблица типов активов
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Asset_Types (
                 type_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,16 +51,13 @@ class Database:
             )
         ''')
 
-        # Таблица местоположений - ДОБАВИЛИ ПОЛЕ is_custom
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Locations (
                 location_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                location_name VARCHAR(100) NOT NULL UNIQUE,
-                is_custom BOOLEAN DEFAULT 0
+                location_name VARCHAR(100) NOT NULL UNIQUE
             )
         ''')
 
-        # Таблица активов (инструменты и расходники)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Assets (
                 asset_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +73,6 @@ class Database:
             )
         ''')
 
-        # Таблица истории использования
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Usage_History (
                 history_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,41 +88,23 @@ class Database:
             )
         ''')
 
-        # Наполняем справочники тестовыми данными
-        self._populate_test_data(cursor)
+        self.connection.commit()
 
-        conn.commit()
-        conn.close()
-        print("База данных успешно инициализирована!")
-
-    def _populate_test_data(self, cursor):
+    def _populate_test_data(self):
         """Заполнение тестовыми данными"""
+        cursor = self.connection.cursor()
+
         # Должности
-        positions = [
-            ('Инженер',),
-            ('Техник',),
-            ('Кладовщик',),
-            ('Мастер',)
-        ]
+        positions = [('Инженер',), ('Техник',), ('Кладовщик',), ('Мастер',)]
         cursor.executemany('INSERT OR IGNORE INTO Positions (position_name) VALUES (?)', positions)
 
         # Типы активов
-        asset_types = [
-            ('Инструмент',),
-            ('Расходник',),
-            ('Измерительный прибор',),
-            ('Электроинструмент',)
-        ]
+        asset_types = [('Инструмент',), ('Расходник',), ('Измерительный прибор',), ('Электроинструмент',)]
         cursor.executemany('INSERT OR IGNORE INTO Asset_Types (type_name) VALUES (?)', asset_types)
 
-        # Местоположения - стандартные без пометки custom
-        locations = [
-            ('Склад №1', 0),
-            ('Цех №5', 0),
-            ('Лаборатория', 0),
-            ('Мастерская', 0)
-        ]
-        cursor.executemany('INSERT OR IGNORE INTO Locations (location_name, is_custom) VALUES (?, ?)', locations)
+        # Местоположения
+        locations = [('Склад №1',), ('Цех №5',), ('Лаборатория',), ('Мастерская',)]
+        cursor.executemany('INSERT OR IGNORE INTO Locations (location_name) VALUES (?)', locations)
 
         # Сотрудники
         employees = [
@@ -149,26 +131,25 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', assets)
 
-    def add_custom_location(self, location_name):
-        """Добавление пользовательского местоположения"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        self.connection.commit()
 
-        # Добавляем звездочку к названию и помечаем как кастомное
-        custom_name = f"{location_name} *"
+    def execute_query(self, query, params=()):
+        """Выполнение запроса с возвратом результата"""
+        with QMutexLocker(self._mutex):
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+            result = cursor.fetchall()
+            return result
 
-        try:
-            cursor.execute(
-                "INSERT INTO Locations (location_name, is_custom) VALUES (?, 1)",
-                (custom_name,)
-            )
-            conn.commit()
-            location_id = cursor.lastrowid
-            conn.close()
-            return location_id
-        except sqlite3.IntegrityError:
-            # Если такое имя уже существует, вернем его ID
-            cursor.execute("SELECT location_id FROM Locations WHERE location_name = ?", (custom_name,))
-            result = cursor.fetchone()
-            conn.close()
-            return result[0] if result else None
+    def execute_update(self, query, params=()):
+        """Выполнение запроса на обновление"""
+        with QMutexLocker(self._mutex):
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+            self.connection.commit()
+            return cursor.lastrowid
+
+    def close(self):
+        """Закрытие соединения с базой данных"""
+        if self.connection:
+            self.connection.close()

@@ -1,16 +1,18 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
-                             QWidget, QPushButton, QMessageBox, QHBoxLayout, QDialog)  # ← ДОБАВИЛИ QDialog
+                             QWidget, QPushButton, QMessageBox, QHBoxLayout, QDialog)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel
 from PyQt6.QtCore import Qt
 
-# Импортируем наш новый диалог
 from views.asset_dialog import AssetDialog
+from database.db_manager import DatabaseManager
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Инициализируем базу данных
+        self.db = DatabaseManager()
         self.init_ui()
         self.load_data()
 
@@ -95,8 +97,7 @@ class MainWindow(QMainWindow):
     def add_asset(self):
         """Добавление нового актива"""
         dialog = AssetDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:  # ← ТЕПЕРЬ ДОЛЖНО РАБОТАТЬ
-            # Если пользователь нажал "Сохранить", обновляем таблицу
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_data()
             QMessageBox.information(self, "Успех", "Новый актив успешно добавлен в систему!")
 
