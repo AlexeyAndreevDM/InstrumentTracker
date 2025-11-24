@@ -162,24 +162,30 @@ class MainWindow(QMainWindow):
 
     def add_asset(self):
         """Добавление нового актива"""
+        print("➕ Открытие диалога добавления актива...")
         dialog = AssetDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_assets_data()
-            QMessageBox.information(self, "Успех", "Новый актив успешно добавлен в систему!")
+            # УБИРАЕМ сообщение об успехе - оно уже показано в диалоге
+            # QMessageBox.information(self, "Успех", "Новый актив успешно добавлен в систему!")
 
     def issue_asset(self):
         """Выдача актива сотруднику"""
+        print("📤 Открытие диалога выдачи актива...")
         dialog = IssueDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_assets_data()
-            QMessageBox.information(self, "Успех", "Актив успешно выдан!")
+            # УБИРАЕМ сообщение об успехе - оно уже показано в диалоге
+            # QMessageBox.information(self, "Успех", "Актив успешно выдан!")
 
     def return_asset(self):
         """Возврат актива"""
+        print("📥 Открытие диалога возврата актива...")
         dialog = ReturnDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_assets_data()
-            QMessageBox.information(self, "Успех", "Актив успешно возвращен!")
+            # УБИРАЕМ сообщение об успехе - оно уже показано в диалоге
+            # QMessageBox.information(self, "Успех", "Актив успешно возвращен!")
 
 
 def main():
