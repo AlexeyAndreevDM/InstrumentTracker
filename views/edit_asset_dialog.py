@@ -1,0 +1,282 @@
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
+                             QLineEdit, QComboBox, QSpinBox, QPushButton,
+                             QMessageBox, QCheckBox)
+from PyQt6.QtCore import Qt
+from database.db_manager import DatabaseManager
+
+
+class EditAssetDialog(QDialog):
+    def __init__(self, asset_id, parent=None):
+        super().__init__(parent)
+        self.asset_id = asset_id
+        self.db = DatabaseManager()
+        self.setWindowTitle("Редактировать актив")
+        self.setFixedSize(450, 400)
+        self.setup_ui()
+        self.load_asset_data()
+        self.load_dropdown_data()
+
+    def setup_ui(self):
+        """Настройка интерфейса диалога"""
+        layout = QVBoxLayout(self)
+
+        # Форма для ввода данных
+        form_layout = QFormLayout()
+
+        # Поля для ввода
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Например: Шуруповерт DeWalt")
+
+        self.type_combo = QComboBox()
+
+        self.model_input = QLineEdit()
+        self.model_input.setPlaceholderText("Например: DCD777D2")
+
+        self.serial_input = QLineEdit()
+        self.serial_input.setPlaceholderText("Только для инструментов")
+
+        # Комбинированный виджет для местоположения
+        location_layout = QHBoxLayout()
+        self.location_combo = QComboBox()
+        self.location_combo.setEditable(True)
+        self.location_combo.setInsertPolicy(QComboBox.InsertPolicy.InsertAtTop)
+
+        self.btn_add_location = QPushButton("+")
+        self.btn_add_location.setFixedWidth(30)
+        self.btn_add_location.setToolTip("Добавить новое местоположение")
+
+        location_layout.addWidget(self.location_combo)
+        location_layout.addWidget(self.btn_add_location)
+
+        self.quantity_spin = QSpinBox()
+        self.quantity_spin.setRange(1, 1000)
+        self.quantity_spin.setValue(1)
+
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["Доступен", "Выдан", "Списан"])
+
+        # Чекбокс для списания
+        self.write_off_checkbox = QCheckBox("Списать актив")
+        self.write_off_reason = QLineEdit()
+        self.write_off_reason.setPlaceholderText("Причина списания...")
+        self.write_off_reason.setVisible(False)
+
+        # Добавляем поля в форму
+        form_layout.addRow("Название*:", self.name_input)
+        form_layout.addRow("Тип*:", self.type_combo)
+        form_layout.addRow("Модель/Артикул*:", self.model_input)
+        form_layout.addRow("Серийный номер:", self.serial_input)
+        form_layout.addRow("Местоположение*:", location_layout)
+        form_layout.addRow("Количество*:", self.quantity_spin)
+        form_layout.addRow("Статус:", self.status_combo)
+        form_layout.addRow(self.write_off_checkbox)
+        form_layout.addRow("Причина списания:", self.write_off_reason)
+
+        layout.addLayout(form_layout)
+
+        # Кнопки
+        button_layout = QHBoxLayout()
+        self.save_btn = QPushButton("💾 Сохранить")
+        self.cancel_btn = QPushButton("❌ Отмена")
+        self.delete_btn = QPushButton("🗑️ Удалить актив")
+        self.delete_btn.setStyleSheet("background-color: #ff6b6b; color: white;")
+
+        button_layout.addWidget(self.save_btn)
+        button_layout.addWidget(self.delete_btn)
+        button_layout.addWidget(self.cancel_btn)
+
+        layout.addLayout(button_layout)
+
+        # Подключаем кнопки и сигналы
+        self.save_btn.clicked.connect(self.save_asset)
+        self.cancel_btn.clicked.connect(self.reject)
+        self.delete_btn.clicked.connect(self.delete_asset)
+        self.btn_add_location.clicked.connect(self.add_new_location)
+        self.write_off_checkbox.toggled.connect(self.write_off_reason.setVisible)
+        self.status_combo.currentTextChanged.connect(self.on_status_changed)
+
+    def load_asset_data(self):
+        """Загрузка данных текущего актива"""
+        try:
+            asset_data = self.db.execute_query("""
+                SELECT name, type_id, model, serial_number, location_id, quantity, current_status
+                FROM Assets WHERE asset_id = ?
+            """, (self.asset_id,))
+
+            if asset_data:
+                name, type_id, model, serial_number, location_id, quantity, status = asset_data[0]
+
+                self.name_input.setText(name)
+                self.model_input.setText(model)
+                self.serial_input.setText(serial_number or "")
+                self.quantity_spin.setValue(quantity)
+                self.status_combo.setCurrentText(status)
+
+                # Сохраняем ID для дальнейшего использования
+                self.current_type_id = type_id
+                self.current_location_id = location_id
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных актива: {e}")
+
+    def load_dropdown_data(self):
+        """Загрузка данных для выпадающих списков"""
+        try:
+            # Загружаем типы активов
+            types = self.db.execute_query("SELECT type_id, type_name FROM Asset_Types")
+            for type_id, type_name in types:
+                self.type_combo.addItem(type_name, type_id)
+                if hasattr(self, 'current_type_id') and type_id == self.current_type_id:
+                    self.type_combo.setCurrentText(type_name)
+
+            # Загружаем местоположения
+            locations = self.db.execute_query("SELECT location_id, location_name FROM Locations")
+            for location_id, location_name in locations:
+                self.location_combo.addItem(location_name, location_id)
+                if hasattr(self, 'current_location_id') and location_id == self.current_location_id:
+                    self.location_combo.setCurrentText(location_name)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных: {e}")
+
+    def on_status_changed(self, status):
+        """Обработчик изменения статуса"""
+        if status == "Списан":
+            self.write_off_checkbox.setChecked(True)
+        else:
+            self.write_off_checkbox.setChecked(False)
+
+    def add_new_location(self):
+        """Добавление нового местоположения"""
+        current_text = self.location_combo.currentText().strip()
+        if not current_text:
+            QMessageBox.warning(self, "Ошибка", "Введите название местоположения!")
+            return
+
+        try:
+            # Проверяем, нет ли уже такого местоположения
+            existing = self.db.execute_query(
+                "SELECT location_id FROM Locations WHERE location_name = ?",
+                (current_text,)
+            )
+
+            if existing:
+                QMessageBox.information(self, "Информация", "Такое местоположение уже существует!")
+                self.location_combo.setCurrentText(current_text)
+                return
+
+            # Добавляем новое местоположение с отметкой *
+            new_location_name = f"{current_text} *"
+            location_id = self.db.execute_update(
+                "INSERT INTO Locations (location_name) VALUES (?)",
+                (new_location_name,)
+            )
+
+            # Обновляем комбобокс
+            self.location_combo.addItem(new_location_name, location_id)
+            self.location_combo.setCurrentText(new_location_name)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка добавления местоположения: {e}")
+
+    def save_asset(self):
+        """Сохранение изменений актива"""
+        # Проверяем обязательные поля
+        if not self.name_input.text().strip():
+            QMessageBox.warning(self, "Ошибка", "Поле 'Название' обязательно для заполнения!")
+            return
+
+        if not self.model_input.text().strip():
+            QMessageBox.warning(self, "Ошибка", "Поле 'Модель/Артикул' обязательно для заполнения!")
+            return
+
+        # Проверяем местоположение
+        location_text = self.location_combo.currentText().strip()
+        if not location_text:
+            QMessageBox.warning(self, "Ошибка", "Поле 'Местоположение' обязательно для заполнения!")
+            return
+
+        try:
+            # Если местоположение новое, добавляем его
+            location_id = self.location_combo.currentData()
+            if location_id is None:
+                new_location_name = f"{location_text} *"
+                location_id = self.db.execute_update(
+                    "INSERT INTO Locations (location_name) VALUES (?)",
+                    (new_location_name,)
+                )
+
+            # Если актив списывается, проверяем причину
+            if self.write_off_checkbox.isChecked() and not self.write_off_reason.text().strip():
+                QMessageBox.warning(self, "Ошибка", "Укажите причину списания!")
+                return
+
+            # Обновляем данные актива
+            self.db.execute_update('''
+                UPDATE Assets 
+                SET name = ?, type_id = ?, model = ?, serial_number = ?, 
+                    location_id = ?, quantity = ?, current_status = ?
+                WHERE asset_id = ?
+            ''', (
+                self.name_input.text().strip(),
+                self.type_combo.currentData(),
+                self.model_input.text().strip(),
+                self.serial_input.text().strip() or None,
+                location_id,
+                self.quantity_spin.value(),
+                self.status_combo.currentText(),
+                self.asset_id
+            ))
+
+            # Если актив списан, добавляем запись в историю
+            if self.write_off_checkbox.isChecked():
+                self.db.execute_update('''
+                    INSERT INTO Usage_History 
+                    (asset_id, employee_id, operation_type, operation_date, notes) 
+                    VALUES (?, NULL, 'списание', datetime('now'), ?)
+                ''', (self.asset_id, self.write_off_reason.text().strip()))
+
+            QMessageBox.information(self, "Успех", "Данные актива успешно обновлены!")
+            self.accept()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка сохранения: {e}")
+
+    def delete_asset(self):
+        """Удаление актива"""
+        confirm = QMessageBox.question(
+            self,
+            "Подтверждение удаления",
+            "Вы уверены, что хотите удалить этот актив?\n\nЭто действие нельзя отменить!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # Проверяем, не выдан ли актив
+            asset_status = self.db.execute_query(
+                "SELECT current_status FROM Assets WHERE asset_id = ?",
+                (self.asset_id,)
+            )
+
+            if asset_status and asset_status[0][0] == "Выдан":
+                QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    "Нельзя удалить актив со статусом 'Выдан'!\n\nСначала верните актив на склад."
+                )
+                return
+
+            # Удаляем актив
+            self.db.execute_update("DELETE FROM Assets WHERE asset_id = ?", (self.asset_id,))
+
+            # Также удаляем связанные записи в истории
+            self.db.execute_update("DELETE FROM Usage_History WHERE asset_id = ?", (self.asset_id,))
+
+            QMessageBox.information(self, "Успех", "Актив успешно удален!")
+            self.accept()  # Закрываем диалог с положительным результатом
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка удаления: {e}")
