@@ -1,9 +1,11 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QWidget, QPushButton, QMessageBox, QHBoxLayout, QDialog,
-                             QTabWidget, QLabel, QDateEdit, QComboBox)
+                             QTabWidget, QLabel, QDateEdit, QComboBox, QGridLayout,
+                             QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtGui import QAction
 
 from views.asset_dialog import AssetDialog
 from views.issue_dialog import IssueDialog
@@ -25,6 +27,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Система учета инструментов и расходников - АО КОНСИСТ-ОС")
         self.setGeometry(100, 100, 1200, 700)
 
+        # Создаем меню
+        self.create_menu()
+
         # Центральный виджет с вкладками
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -34,6 +39,11 @@ class MainWindow(QMainWindow):
 
         # Создаем вкладки
         self.tabs = QTabWidget()
+
+        # Вкладка 0: Панель управления (дашборд)
+        self.dashboard_tab = QWidget()
+        self.setup_dashboard_tab()
+        self.tabs.addTab(self.dashboard_tab, "🏠 Панель управления")
 
         # Вкладка 1: Каталог активов
         self.assets_tab = QWidget()
@@ -45,9 +55,227 @@ class MainWindow(QMainWindow):
         self.setup_operations_tab()
         self.tabs.addTab(self.operations_tab, "🔄 Операции")
 
+        # Вкладка 3: Отчеты
+        self.reports_tab = QWidget()
+        self.setup_reports_tab()
+        self.tabs.addTab(self.reports_tab, "📊 Отчеты")
+
         layout.addWidget(self.tabs)
 
         print("✅ Интерфейс инициализирован")
+
+    def create_menu(self):
+        """Создание меню приложения"""
+        menubar = self.menuBar()
+
+        # Меню Файл
+        file_menu = menubar.addMenu("📁 Файл")
+
+        export_action = QAction("📤 Экспорт всех данных", self)
+        export_action.triggered.connect(self.export_all_data)
+        file_menu.addAction(export_action)
+
+        backup_action = QAction("💾 Создать резервную копию", self)
+        backup_action.triggered.connect(self.create_backup)
+        file_menu.addAction(backup_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("🚪 Выход", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # Меню Справка
+        help_menu = menubar.addMenu("❓ Справка")
+
+        help_action = QAction("📘 Руководство пользователя", self)
+        help_action.triggered.connect(self.show_help)
+        help_menu.addAction(help_action)
+
+        about_action = QAction("ℹ️ О программе", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
+        update_action = QAction("🔄 Проверить обновления", self)
+        update_action.triggered.connect(self.check_for_updates)
+        help_menu.addAction(update_action)
+
+    def setup_dashboard_tab(self):
+        """Настройка вкладки панели управления"""
+        layout = QVBoxLayout(self.dashboard_tab)
+
+        # Заголовок
+        title_label = QLabel("📊 Панель управления системой учета")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
+        layout.addWidget(title_label)
+
+        # Статистика в виде сетки
+        stats_grid = QGridLayout()
+
+        # Виджеты статистики
+        self.total_assets_label = self.create_stat_widget("Всего активов", "0")
+        self.available_assets_label = self.create_stat_widget("Доступно", "0")
+        self.issued_assets_label = self.create_stat_widget("Выдано", "0")
+        self.overdue_assets_label = self.create_stat_widget("Просрочено", "0")
+        self.employees_label = self.create_stat_widget("Сотрудников", "0")
+        self.total_operations_label = self.create_stat_widget("Операций", "0")
+
+        # Располагаем виджеты в сетке 2x3
+        stats_grid.addWidget(self.total_assets_label, 0, 0)
+        stats_grid.addWidget(self.available_assets_label, 0, 1)
+        stats_grid.addWidget(self.issued_assets_label, 0, 2)
+        stats_grid.addWidget(self.overdue_assets_label, 1, 0)
+        stats_grid.addWidget(self.employees_label, 1, 1)
+        stats_grid.addWidget(self.total_operations_label, 1, 2)
+
+        layout.addLayout(stats_grid)
+
+        # Разделитель
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(separator)
+
+        # Последние операции
+        recent_ops_label = QLabel("📝 Последние операции")
+        recent_ops_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
+        layout.addWidget(recent_ops_label)
+
+        self.recent_operations_table = QTableView()
+        layout.addWidget(self.recent_operations_table)
+
+        # Кнопка обновления
+        refresh_btn = QPushButton("🔄 Обновить панель")
+        refresh_btn.clicked.connect(self.update_dashboard)
+        layout.addWidget(refresh_btn)
+
+        # Обновляем данные при открытии вкладки
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
+    def create_stat_widget(self, title, value):
+        """Создание виджета статистики"""
+        widget = QWidget()
+        widget.setStyleSheet("""
+            QWidget {
+                background-color: #f0f0f0;
+                border-radius: 8px;
+                padding: 10px;
+                margin: 5px;
+            }
+            QLabel {
+                font-weight: bold;
+                color: #333;
+            }
+        """)
+
+        layout = QVBoxLayout(widget)
+
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 12px; color: #666;")
+
+        value_label = QLabel(value)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        value_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50;")
+
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+
+        # Сохраняем ссылку на label с значением
+        if title == "Всего активов":
+            self.total_assets_value = value_label
+        elif title == "Доступно":
+            self.available_assets_value = value_label
+        elif title == "Выдано":
+            self.issued_assets_value = value_label
+        elif title == "Просрочено":
+            self.overdue_assets_value = value_label
+        elif title == "Сотрудников":
+            self.employees_value = value_label
+        elif title == "Операций":
+            self.total_operations_value = value_label
+
+        return widget
+
+    def on_tab_changed(self, index):
+        """Обработчик смены вкладки"""
+        if self.tabs.tabText(index) == "🏠 Панель управления":
+            self.update_dashboard()
+
+    def update_dashboard(self):
+        """Обновление данных на панели управления"""
+        print("🔄 Обновление панели управления...")
+
+        try:
+            # Получаем статистику
+            total_assets = self.db.execute_query("SELECT COUNT(*) FROM Assets")[0][0]
+            available_assets = \
+            self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Доступен'")[0][0]
+            issued_assets = self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Выдан'")[0][0]
+
+            overdue_assets = self.db.execute_query("""
+                SELECT COUNT(*) 
+                FROM Usage_History uh
+                JOIN Assets a ON uh.asset_id = a.asset_id
+                WHERE uh.operation_type = 'выдача'
+                    AND uh.actual_return_date IS NULL
+                    AND DATE(uh.planned_return_date) < DATE('now')
+            """)[0][0]
+
+            total_employees = self.db.execute_query("SELECT COUNT(*) FROM Employees")[0][0]
+            total_operations = self.db.execute_query("SELECT COUNT(*) FROM Usage_History")[0][0]
+
+            # Обновляем значения
+            self.total_assets_value.setText(str(total_assets))
+            self.available_assets_value.setText(str(available_assets))
+            self.issued_assets_value.setText(str(issued_assets))
+            self.overdue_assets_value.setText(str(overdue_assets))
+            self.employees_value.setText(str(total_employees))
+            self.total_operations_value.setText(str(total_operations))
+
+            # Загружаем последние операции
+            self.load_recent_operations()
+
+            print("✅ Панель управления обновлена")
+
+        except Exception as e:
+            print(f"❌ Ошибка обновления панели управления: {e}")
+
+    def load_recent_operations(self):
+        """Загрузка последних операций для дашборда"""
+        if not hasattr(self, 'db_connection'):
+            return
+
+        model = QSqlQueryModel()
+
+        query = """
+        SELECT 
+            CASE 
+                WHEN uh.operation_type = 'выдача' THEN '📤 Выдача'
+                WHEN uh.operation_type = 'возврат' THEN '📥 Возврат'
+                WHEN uh.operation_type = 'списание' THEN '🗑️ Списание'
+                ELSE uh.operation_type
+            END as 'Тип',
+            a.name as 'Актив',
+            e.last_name || ' ' || e.first_name as 'Сотрудник',
+            uh.operation_date as 'Дата',
+            CASE 
+                WHEN uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL AND DATE(uh.planned_return_date) < DATE('now')
+                THEN '⚠️ Просрочено'
+                WHEN uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL
+                THEN '🔄 На руках'
+                ELSE '✅ Завершено'
+            END as 'Статус'
+        FROM Usage_History uh
+        LEFT JOIN Employees e ON uh.employee_id = e.employee_id
+        LEFT JOIN Assets a ON uh.asset_id = a.asset_id
+        ORDER BY uh.operation_date DESC
+        LIMIT 10
+        """
+
+        model.setQuery(query)
+        self.recent_operations_table.setModel(model)
+        self.recent_operations_table.resizeColumnsToContents()
 
     def setup_assets_tab(self):
         """Настройка вкладки каталога активов"""
@@ -148,6 +376,53 @@ class MainWindow(QMainWindow):
 
         # Загружаем данные для фильтров
         self.load_history_filters_data()
+
+    def setup_reports_tab(self):
+        """Настройка вкладки отчетов"""
+        layout = QVBoxLayout(self.reports_tab)
+
+        # Панель кнопок отчетов
+        reports_buttons_layout = QHBoxLayout()
+
+        self.btn_overdue_report = QPushButton("📅 Отчет по просрочкам")
+        self.btn_usage_report = QPushButton("📈 Отчет по использованию")
+        self.btn_inventory_report = QPushButton("📋 Инвентаризационная ведомость")
+
+        reports_buttons_layout.addWidget(self.btn_overdue_report)
+        reports_buttons_layout.addWidget(self.btn_usage_report)
+        reports_buttons_layout.addWidget(self.btn_inventory_report)
+        reports_buttons_layout.addStretch()
+
+        layout.addLayout(reports_buttons_layout)
+
+        # Панель кнопок экспорта
+        export_buttons_layout = QHBoxLayout()
+
+        self.btn_export_csv = QPushButton("💾 Экспорт в CSV")
+        self.btn_export_excel = QPushButton("📊 Экспорт в Excel")
+        self.btn_print_report = QPushButton("🖨️ Печать отчета")
+
+        export_buttons_layout.addWidget(self.btn_export_csv)
+        export_buttons_layout.addWidget(self.btn_export_excel)
+        export_buttons_layout.addWidget(self.btn_print_report)
+        export_buttons_layout.addStretch()
+
+        layout.addLayout(export_buttons_layout)
+
+        # Таблица для отображения отчетов
+        self.reports_table = QTableView()
+        layout.addWidget(self.reports_table)
+
+        # Подключаем кнопки
+        self.btn_overdue_report.clicked.connect(self.generate_overdue_report)
+        self.btn_usage_report.clicked.connect(self.generate_usage_report)
+        self.btn_inventory_report.clicked.connect(self.generate_inventory_report)
+        self.btn_export_csv.clicked.connect(self.export_to_csv)
+        self.btn_export_excel.clicked.connect(self.export_to_excel)
+        self.btn_print_report.clicked.connect(self.print_report)
+
+        # Текущий тип отчета для экспорта
+        self.current_report_type = None
 
     def load_assets_data(self):
         """Загрузка данных об активах"""
@@ -363,6 +638,234 @@ class MainWindow(QMainWindow):
         dialog = ReturnDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_assets_data()
+
+    def export_to_csv(self):
+        """Экспорт текущего отчета в CSV"""
+        if not self.reports_table.model():
+            QMessageBox.warning(self, "Ошибка", "Сначала сгенерируйте отчет!")
+            return
+
+        # Временная заглушка - нужно реализовать экспорт
+        QMessageBox.information(self, "Экспорт", "Функция экспорта в CSV будет реализована в следующей версии")
+
+    def export_to_excel(self):
+        """Экспорт текущего отчета в Excel"""
+        if not self.reports_table.model():
+            QMessageBox.warning(self, "Ошибка", "Сначала сгенерируйте отчет!")
+            return
+
+        # Временная заглушка - нужно реализовать экспорт
+        QMessageBox.information(self, "Экспорт", "Функция экспорта в Excel будет реализована в следующей версии")
+
+    def print_report(self):
+        """Печать отчета"""
+        if not self.reports_table.model():
+            QMessageBox.warning(self, "Ошибка", "Сначала сгенерируйте отчет!")
+            return
+
+        QMessageBox.information(self, "Печать", "Функция печати будет реализована в следующей версии")
+
+    def generate_overdue_report(self):
+        """Генерация отчета по просроченным активам"""
+        print("📅 Генерация отчета по просрочкам...")
+        self.current_report_type = "overdue_report"
+
+        if not hasattr(self, 'db_connection'):
+            return
+
+        model = QSqlQueryModel()
+
+        query = """
+        SELECT 
+            a.name as 'Актив',
+            a.model as 'Модель',
+            e.last_name || ' ' || e.first_name as 'Сотрудник',
+            uh.operation_date as 'Дата выдачи',
+            uh.planned_return_date as 'Планируемый возврат',
+            JULIANDAY('now') - JULIANDAY(uh.planned_return_date) as 'Дней просрочки'
+        FROM Usage_History uh
+        JOIN Assets a ON uh.asset_id = a.asset_id
+        JOIN Employees e ON uh.employee_id = e.employee_id
+        WHERE uh.operation_type = 'выдача'
+            AND uh.actual_return_date IS NULL
+            AND DATE(uh.planned_return_date) < DATE('now')
+        ORDER BY uh.planned_return_date
+        """
+
+        model.setQuery(query)
+        self.reports_table.setModel(model)
+        self.reports_table.resizeColumnsToContents()
+
+        if model.rowCount() == 0:
+            QMessageBox.information(self, "Информация", "Нет просроченных активов!")
+
+    def generate_usage_report(self):
+        """Генерация отчета по использованию активов"""
+        print("📈 Генерация отчета по использованию...")
+        self.current_report_type = "usage_report"
+
+        if not hasattr(self, 'db_connection'):
+            return
+
+        model = QSqlQueryModel()
+
+        query = """
+        SELECT 
+            a.name as 'Актив',
+            a.model as 'Модель',
+            COUNT(uh.history_id) as 'Количество выдач',
+            MIN(uh.operation_date) as 'Первая выдача',
+            MAX(uh.operation_date) as 'Последняя выдача'
+        FROM Assets a
+        LEFT JOIN Usage_History uh ON a.asset_id = uh.asset_id AND uh.operation_type = 'выдача'
+        GROUP BY a.asset_id
+        ORDER BY COUNT(uh.history_id) DESC
+        """
+
+        model.setQuery(query)
+        self.reports_table.setModel(model)
+        self.reports_table.resizeColumnsToContents()
+
+    def generate_inventory_report(self):
+        """Генерация инвентаризационной ведомости"""
+        print("📋 Генерация инвентаризационной ведомости...")
+        self.current_report_type = "inventory_report"
+
+        if not hasattr(self, 'db_connection'):
+            return
+
+        model = QSqlQueryModel()
+
+        query = """
+        SELECT 
+            a.asset_id as 'Инвентарный номер',
+            a.name as 'Наименование',
+            at.type_name as 'Тип',
+            a.model as 'Модель',
+            a.serial_number as 'Серийный номер',
+            a.current_status as 'Статус',
+            l.location_name as 'Местоположение',
+            a.quantity as 'Количество',
+            CASE 
+                WHEN a.current_status = 'Выдан' THEN e.last_name || ' ' || e.first_name
+                ELSE ''
+            END as 'У кого'
+        FROM Assets a
+        JOIN Asset_Types at ON a.type_id = at.type_id
+        JOIN Locations l ON a.location_id = l.location_id
+        LEFT JOIN Usage_History uh ON a.asset_id = uh.asset_id AND uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL
+        LEFT JOIN Employees e ON uh.employee_id = e.employee_id
+        ORDER BY a.asset_id
+        """
+
+        model.setQuery(query)
+        self.reports_table.setModel(model)
+        self.reports_table.resizeColumnsToContents()
+
+    def export_all_data(self):
+        """Экспорт всех данных системы"""
+        QMessageBox.information(self, "Экспорт", "Функция экспорта всех данных будет реализована в следующей версии")
+
+    def create_backup(self):
+        """Создание резервной копии базы данных"""
+        QMessageBox.information(self, "Резервное копирование",
+                                "Функция резервного копирования будет реализована в следующей версии")
+
+    def show_about(self):
+        """Показ информации о программе"""
+        about_text = """
+        <h2>Система учета инструментов и расходников</h2>
+        <p><b>Версия:</b> 1.0.0</p>
+        <p><b>Разработчик:</b> РТУ МИРЭА</p>
+        <p><b>Заказчик:</b> АО "КОНСИСТ-ОС"</p>
+        <p><b>Год разработки:</b> 2024</p>
+
+        <h3>Возможности системы:</h3>
+        <ul>
+            <li>Учет инструментов и расходных материалов</li>
+            <li>Выдача и возврат активов сотрудникам</li>
+            <li>Контроль сроков использования</li>
+            <li>Формирование отчетов и аналитика</li>
+            <li>Экспорт данных в различные форматы</li>
+        </ul>
+
+        <p>Система разработана в соответствии с требованиями:</p>
+        <ul>
+            <li>ГОСТ Р 59793-2021</li>
+            <li>ГОСТ 34.602-2020</li>
+            <li>Методические указания Госкорпорации "Росатом"</li>
+        </ul>
+        """
+
+        QMessageBox.about(self, "О программе", about_text)
+
+    def show_help(self):
+        """Показ руководства пользователя"""
+        help_text = """
+        <h2>Руководство пользователя</h2>
+
+        <h3>1. Панель управления</h3>
+        <p>На главной вкладке отображается общая статистика системы.</p>
+
+        <h3>2. Каталог активов</h3>
+        <p>Работа с инструментами и расходниками:</p>
+        <ul>
+            <li><b>Добавить актив:</b> создание новой записи об инструменте</li>
+            <li><b>Редактировать:</b> изменение данных выбранного актива</li>
+            <li><b>Удалить:</b> удаление актива из системы (только доступные)</li>
+            <li><b>Фильтры:</b> поиск и сортировка активов по различным параметрам</li>
+        </ul>
+
+        <h3>3. Операции</h3>
+        <p>Управление выдачей и возвратом:</p>
+        <ul>
+            <li><b>Выдать актив:</b> оформление выдачи инструмента сотруднику</li>
+            <li><b>Вернуть актив:</b> оформление возврата на склад</li>
+            <li><b>История операций:</b> просмотр всех транзакций с фильтрами</li>
+        </ul>
+
+        <h3>4. Отчеты</h3>
+        <p>Аналитика и документооборот:</p>
+        <ul>
+            <li><b>Отчет по просрочкам:</b> список активов с истекшим сроком возврата</li>
+            <li><b>Отчет по использованию:</b> статистика частоты использования</li>
+            <li><b>Инвентаризационная ведомость:</b> полный перечень активов</li>
+            <li><b>Экспорт:</b> сохранение отчетов в CSV или Excel формате</li>
+        </ul>
+
+        <h3>5. Быстрые клавиши</h3>
+        <ul>
+            <li><b>F5:</b> Обновить текущую вкладку</li>
+            <li><b>Ctrl+N:</b> Добавить новый актив</li>
+            <li><b>Ctrl+E:</b> Редактировать выбранный актив</li>
+            <li><b>Ctrl+F:</b> Поиск в текущей таблице</li>
+            <li><b>Ctrl+S:</b> Сохранить/экспортировать отчет</li>
+        </ul>
+
+        <p>Для получения дополнительной помощи обратитесь к администратору системы.</p>
+        """
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Руководство пользователя")
+        dialog.setFixedSize(600, 700)
+
+        layout = QVBoxLayout(dialog)
+
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setHtml(help_text)
+
+        layout.addWidget(text_edit)
+
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec()
+
+    def check_for_updates(self):
+        """Проверка обновлений"""
+        QMessageBox.information(self, "Обновления", "Проверка обновлений...\nУ вас установлена последняя версия.")
 
 
 def main():

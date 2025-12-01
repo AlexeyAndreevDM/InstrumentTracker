@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QLineEdit, QComboBox, QSpinBox, QPushButton,
-                             QMessageBox, QCheckBox)
-from PyQt6.QtCore import Qt
+                             QMessageBox, QCheckBox, QGroupBox, QTextEdit)
+from PyQt6.QtCore import Qt, QDate
 from database.db_manager import DatabaseManager
 
 
@@ -10,8 +10,9 @@ class EditAssetDialog(QDialog):
         super().__init__(parent)
         self.asset_id = asset_id
         self.db = DatabaseManager()
+        self.current_issue_info = None
         self.setWindowTitle("Редактировать актив")
-        self.setFixedSize(450, 400)
+        self.setFixedSize(500, 650)
         self.setup_ui()
         self.load_asset_data()
         self.load_dropdown_data()
@@ -20,7 +21,10 @@ class EditAssetDialog(QDialog):
         """Настройка интерфейса диалога"""
         layout = QVBoxLayout(self)
 
-        # Форма для ввода данных
+        # Основная информация об активе
+        main_group = QGroupBox("Основная информация")
+        main_layout = QVBoxLayout(main_group)
+
         form_layout = QFormLayout()
 
         # Поля для ввода
@@ -55,12 +59,6 @@ class EditAssetDialog(QDialog):
         self.status_combo = QComboBox()
         self.status_combo.addItems(["Доступен", "Выдан", "Списан"])
 
-        # Чекбокс для списания
-        self.write_off_checkbox = QCheckBox("Списать актив")
-        self.write_off_reason = QLineEdit()
-        self.write_off_reason.setPlaceholderText("Причина списания...")
-        self.write_off_reason.setVisible(False)
-
         # Добавляем поля в форму
         form_layout.addRow("Название*:", self.name_input)
         form_layout.addRow("Тип*:", self.type_combo)
@@ -69,10 +67,48 @@ class EditAssetDialog(QDialog):
         form_layout.addRow("Местоположение*:", location_layout)
         form_layout.addRow("Количество*:", self.quantity_spin)
         form_layout.addRow("Статус:", self.status_combo)
-        form_layout.addRow(self.write_off_checkbox)
-        form_layout.addRow("Причина списания:", self.write_off_reason)
 
-        layout.addLayout(form_layout)
+        main_layout.addLayout(form_layout)
+        layout.addWidget(main_group)
+
+        # Группа информации о выдаче (показывается только если статус "Выдан")
+        self.issue_group = QGroupBox("Информация о выдаче")
+        self.issue_layout = QFormLayout(self.issue_group)
+
+        self.employee_combo = QComboBox()
+
+        # Заменяем QLineEdit на QDateEdit для выбора дат
+        from PyQt6.QtWidgets import QDateEdit
+        self.issue_date_edit = QDateEdit()
+        self.issue_date_edit.setCalendarPopup(True)
+        self.issue_date_edit.setDate(QDate.currentDate())
+
+        self.planned_return_edit = QDateEdit()
+        self.planned_return_edit.setCalendarPopup(True)
+        self.planned_return_edit.setDate(QDate.currentDate().addDays(7))
+
+        self.issue_layout.addRow("Сотрудник*:", self.employee_combo)
+        self.issue_layout.addRow("Дата выдачи*:", self.issue_date_edit)
+        self.issue_layout.addRow("Планируемая дата возврата*:", self.planned_return_edit)
+
+        layout.addWidget(self.issue_group)
+        self.issue_group.setVisible(False)
+
+        # Группа списания
+        self.write_off_group = QGroupBox("Списание актива")
+        write_off_layout = QVBoxLayout(self.write_off_group)
+
+        self.write_off_checkbox = QCheckBox("Списать актив")
+        self.write_off_reason = QTextEdit()
+        self.write_off_reason.setMaximumHeight(60)
+        self.write_off_reason.setPlaceholderText("Укажите причину списания...")
+        self.write_off_reason.setVisible(False)
+
+        write_off_layout.addWidget(self.write_off_checkbox)
+        write_off_layout.addWidget(self.write_off_reason)
+
+        layout.addWidget(self.write_off_group)
+        self.write_off_group.setVisible(False)
 
         # Кнопки
         button_layout = QHBoxLayout()
@@ -92,7 +128,7 @@ class EditAssetDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         self.delete_btn.clicked.connect(self.delete_asset)
         self.btn_add_location.clicked.connect(self.add_new_location)
-        self.write_off_checkbox.toggled.connect(self.write_off_reason.setVisible)
+        self.write_off_checkbox.toggled.connect(self.on_write_off_toggled)
         self.status_combo.currentTextChanged.connect(self.on_status_changed)
 
     def load_asset_data(self):
@@ -116,8 +152,42 @@ class EditAssetDialog(QDialog):
                 self.current_type_id = type_id
                 self.current_location_id = location_id
 
+                # Загружаем информацию о выдаче, если актив выдан
+                if status == "Выдан":
+                    self.load_issue_info()
+
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных актива: {e}")
+
+    def load_issue_info(self):
+        """Загрузка информации о текущей выдаче актива"""
+        try:
+            issue_data = self.db.execute_query("""
+                SELECT 
+                    e.employee_id,
+                    e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.patronymic, '') as employee_name,
+                    uh.operation_date,
+                    uh.planned_return_date
+                FROM Usage_History uh
+                JOIN Employees e ON uh.employee_id = e.employee_id
+                WHERE uh.asset_id = ? 
+                    AND uh.operation_type = 'выдача' 
+                    AND uh.actual_return_date IS NULL
+                ORDER BY uh.operation_date DESC
+                LIMIT 1
+            """, (self.asset_id,))
+
+            if issue_data:
+                employee_id, employee_name, operation_date, planned_return_date = issue_data[0]
+                self.current_issue_info = {
+                    'employee_id': employee_id,
+                    'employee_name': employee_name,
+                    'operation_date': operation_date,
+                    'planned_return_date': planned_return_date
+                }
+
+        except Exception as e:
+            print(f"Ошибка загрузки информации о выдаче: {e}")
 
     def load_dropdown_data(self):
         """Загрузка данных для выпадающих списков"""
@@ -136,15 +206,61 @@ class EditAssetDialog(QDialog):
                 if hasattr(self, 'current_location_id') and location_id == self.current_location_id:
                     self.location_combo.setCurrentText(location_name)
 
+            # Загружаем сотрудников для информации о выдаче
+            employees = self.db.execute_query("""
+                SELECT 
+                    employee_id,
+                    last_name || ' ' || first_name || ' ' || COALESCE(patronymic, '') as full_name,
+                    email
+                FROM Employees 
+                ORDER BY last_name, first_name
+            """)
+
+            for employee_id, full_name, email in employees:
+                if email:
+                    display_text = f"{full_name} ({email})"
+                else:
+                    display_text = full_name
+                self.employee_combo.addItem(display_text, employee_id)
+
+            # Устанавливаем текущего сотрудника, если актив выдан
+            if self.current_issue_info:
+                for i in range(self.employee_combo.count()):
+                    if self.employee_combo.itemData(i) == self.current_issue_info['employee_id']:
+                        self.employee_combo.setCurrentIndex(i)
+                        break
+
+                # Устанавливаем даты из базы данных
+                if self.current_issue_info['operation_date']:
+                    issue_date = QDate.fromString(self.current_issue_info['operation_date'], 'yyyy-MM-dd')
+                    self.issue_date_edit.setDate(issue_date)
+
+                if self.current_issue_info['planned_return_date']:
+                    return_date = QDate.fromString(self.current_issue_info['planned_return_date'], 'yyyy-MM-dd')
+                    self.planned_return_edit.setDate(return_date)
+
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных: {e}")
 
     def on_status_changed(self, status):
         """Обработчик изменения статуса"""
+        # Показываем/скрываем группу списания
         if status == "Списан":
+            self.write_off_group.setVisible(True)
             self.write_off_checkbox.setChecked(True)
         else:
+            self.write_off_group.setVisible(False)
             self.write_off_checkbox.setChecked(False)
+
+        # Показываем/скрываем группу информации о выдаче
+        if status == "Выдан":
+            self.issue_group.setVisible(True)
+        else:
+            self.issue_group.setVisible(False)
+
+    def on_write_off_toggled(self, checked):
+        """Обработчик переключения чекбокса списания"""
+        self.write_off_reason.setVisible(checked)
 
     def add_new_location(self):
         """Добавление нового местоположения"""
@@ -196,6 +312,22 @@ class EditAssetDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Поле 'Местоположение' обязательно для заполнения!")
             return
 
+        # Если актив выдан, проверяем обязательные поля выдачи
+        if self.status_combo.currentText() == "Выдан":
+            if self.employee_combo.currentData() is None:
+                QMessageBox.warning(self, "Ошибка", "Выберите сотрудника, которому выдан актив!")
+                return
+
+            # Проверяем, что дата возврата позже даты выдачи
+            if self.planned_return_edit.date() <= self.issue_date_edit.date():
+                QMessageBox.warning(self, "Ошибка", "Дата возврата должна быть позже даты выдачи!")
+                return
+
+        # Если актив списывается, проверяем причину
+        if self.write_off_checkbox.isChecked() and not self.write_off_reason.toPlainText().strip():
+            QMessageBox.warning(self, "Ошибка", "Укажите причину списания!")
+            return
+
         try:
             # Если местоположение новое, добавляем его
             location_id = self.location_combo.currentData()
@@ -205,11 +337,6 @@ class EditAssetDialog(QDialog):
                     "INSERT INTO Locations (location_name) VALUES (?)",
                     (new_location_name,)
                 )
-
-            # Если актив списывается, проверяем причину
-            if self.write_off_checkbox.isChecked() and not self.write_off_reason.text().strip():
-                QMessageBox.warning(self, "Ошибка", "Укажите причину списания!")
-                return
 
             # Обновляем данные актива
             self.db.execute_update('''
@@ -228,13 +355,40 @@ class EditAssetDialog(QDialog):
                 self.asset_id
             ))
 
+            # Обрабатываем операцию выдачи, если актив выдан
+            if self.status_combo.currentText() == "Выдан":
+                employee_id = self.employee_combo.currentData()
+                issue_date = self.issue_date_edit.date().toString('yyyy-MM-dd')
+                planned_return_date = self.planned_return_edit.date().toString('yyyy-MM-dd')
+
+                # Проверяем, есть ли уже открытая выдача
+                existing_issue = self.db.execute_query('''
+                    SELECT history_id FROM Usage_History 
+                    WHERE asset_id = ? AND operation_type = 'выдача' AND actual_return_date IS NULL
+                ''', (self.asset_id,))
+
+                if existing_issue:
+                    # Обновляем существующую выдачу
+                    self.db.execute_update('''
+                        UPDATE Usage_History 
+                        SET employee_id = ?, operation_date = ?, planned_return_date = ?
+                        WHERE asset_id = ? AND operation_type = 'выдача' AND actual_return_date IS NULL
+                    ''', (employee_id, issue_date, planned_return_date, self.asset_id))
+                else:
+                    # Создаем новую выдачу
+                    self.db.execute_update('''
+                        INSERT INTO Usage_History 
+                        (asset_id, employee_id, operation_type, operation_date, planned_return_date) 
+                        VALUES (?, ?, 'выдача', ?, ?)
+                    ''', (self.asset_id, employee_id, issue_date, planned_return_date))
+
             # Если актив списан, добавляем запись в историю
             if self.write_off_checkbox.isChecked():
                 self.db.execute_update('''
                     INSERT INTO Usage_History 
                     (asset_id, employee_id, operation_type, operation_date, notes) 
                     VALUES (?, NULL, 'списание', datetime('now'), ?)
-                ''', (self.asset_id, self.write_off_reason.text().strip()))
+                ''', (self.asset_id, self.write_off_reason.toPlainText().strip()))
 
             QMessageBox.information(self, "Успех", "Данные актива успешно обновлены!")
             self.accept()
@@ -276,7 +430,7 @@ class EditAssetDialog(QDialog):
             self.db.execute_update("DELETE FROM Usage_History WHERE asset_id = ?", (self.asset_id,))
 
             QMessageBox.information(self, "Успех", "Актив успешно удален!")
-            self.accept()  # Закрываем диалог с положительным результатом
+            self.accept()
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка удаления: {e}")
