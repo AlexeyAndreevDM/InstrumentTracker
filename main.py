@@ -12,6 +12,7 @@ from views.issue_dialog import IssueDialog
 from views.return_dialog import ReturnDialog
 from views.edit_asset_dialog import EditAssetDialog
 from database.db_manager import DatabaseManager
+from notification_manager import NotificationManager
 
 
 class MainWindow(QMainWindow):
@@ -19,6 +20,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         print("🚀 Инициализация главного окна...")
         self.db = DatabaseManager()
+        
+        # Инициализация менеджера уведомлений
+        self.notification_manager = NotificationManager(self)
+        self.notification_manager.start_checking(interval_ms=60000)  # Проверка каждую минуту
+        
         self.init_ui()
         self.load_assets_data()
 
@@ -477,6 +483,9 @@ class MainWindow(QMainWindow):
         """Загрузка истории операций с фильтрами"""
         print("🔄 Загрузка истории операций...")
 
+        # Сначала обновляем статусы просроченных активов в примечаниях
+        self._update_overdue_notes()
+
         if not hasattr(self, 'db_connection'):
             return
 
@@ -498,7 +507,13 @@ class MainWindow(QMainWindow):
             uh.operation_date as 'Дата операции',
             uh.planned_return_date as 'План возврата',
             uh.actual_return_date as 'Факт возврата',
-            uh.notes as 'Примечания'
+            CASE 
+                WHEN uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL AND DATE(uh.planned_return_date) < DATE('now')
+                THEN COALESCE(uh.notes, '') || ' [Просрочено]'
+                WHEN uh.actual_return_date IS NOT NULL AND DATE(uh.actual_return_date) > DATE(uh.planned_return_date)
+                THEN COALESCE(uh.notes, '') || ' [Возвращено с опозданием]'
+                ELSE COALESCE(uh.notes, '')
+            END as 'Примечания'
         FROM Usage_History uh
         JOIN Employees e ON uh.employee_id = e.employee_id
         JOIN Assets a ON uh.asset_id = a.asset_id
@@ -541,6 +556,34 @@ class MainWindow(QMainWindow):
 
         self.history_table.setModel(model)
         self.history_table.resizeColumnsToContents()
+
+    def _update_overdue_notes(self):
+        """Автоматическое обновление примечаний для просроченных активов"""
+        try:
+            # Получаем просроченные активы без отметки в примечаниях
+            query = """
+                SELECT history_id, notes
+                FROM Usage_History
+                WHERE operation_type = 'выдача'
+                    AND actual_return_date IS NULL
+                    AND DATE(planned_return_date) < DATE('now')
+                    AND (notes IS NULL OR notes NOT LIKE '%Просрочено%')
+            """
+            
+            results = self.db.execute_query(query)
+            
+            for history_id, notes in results:
+                from PyQt6.QtCore import QDate
+                new_notes = f"{notes}\n[Просрочено: {QDate.currentDate().toString('yyyy-MM-dd')}]" if notes else f"[Просрочено: {QDate.currentDate().toString('yyyy-MM-dd')}]"
+                
+                self.db.execute_update(
+                    "UPDATE Usage_History SET notes = ? WHERE history_id = ?",
+                    (new_notes, history_id)
+                )
+                
+        except Exception as e:
+            print(f"⚠️ Предупреждение при обновлении примечаний: {e}")
+
 
     def load_history_filters_data(self):
         """Загрузка данных для фильтров истории"""
@@ -866,6 +909,16 @@ class MainWindow(QMainWindow):
     def check_for_updates(self):
         """Проверка обновлений"""
         QMessageBox.information(self, "Обновления", "Проверка обновлений...\nУ вас установлена последняя версия.")
+
+    def closeEvent(self, event):
+        """Обработчик закрытия окна приложения"""
+        print("🛑 Закрытие приложения...")
+        
+        # Останавливаем проверку уведомлений
+        if hasattr(self, 'notification_manager'):
+            self.notification_manager.cleanup()
+        
+        super().closeEvent(event)
 
 
 def main():
