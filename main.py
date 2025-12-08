@@ -964,8 +964,278 @@ class MainWindow(QMainWindow):
         self.reports_table.resizeColumnsToContents()
 
     def export_all_data(self):
-        """Экспорт всех данных системы"""
-        QMessageBox.information(self, "Экспорт", "Функция экспорта всех данных будет реализована в следующей версии")
+        """Экспорт всех данных системы в Excel"""
+        # Выбираем путь для сохранения файла
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Экспорт всех данных",
+            f"export_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            wb = Workbook()
+            wb.remove(wb.active)  # Удаляем лист по умолчанию
+            
+            # Стили для заголовков
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            data_alignment = Alignment(wrap_text=True, vertical="top")
+            
+            # 1. Лист с активами
+            self._export_assets_sheet(wb, header_font, header_fill, header_alignment, data_alignment)
+            
+            # 2. Лист с сотрудниками
+            self._export_employees_sheet(wb, header_font, header_fill, header_alignment, data_alignment)
+            
+            # 3. Лист с историей операций
+            self._export_history_sheet(wb, header_font, header_fill, header_alignment, data_alignment)
+            
+            # 4. Лист с типами активов
+            self._export_asset_types_sheet(wb, header_font, header_fill, header_alignment, data_alignment)
+            
+            # 5. Лист с местоположениями
+            self._export_locations_sheet(wb, header_font, header_fill, header_alignment, data_alignment)
+            
+            # 6. Лист со статистикой
+            self._export_statistics_sheet(wb, header_font, header_fill, header_alignment, data_alignment)
+            
+            wb.save(file_path)
+            QMessageBox.information(self, "Успех", f"Все данные успешно экспортированы:\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте данных: {e}")
+
+    def _export_assets_sheet(self, wb, header_font, header_fill, header_alignment, data_alignment):
+        """Экспорт таблицы активов"""
+        ws = wb.create_sheet("Активы")
+        
+        headers = ["ID", "Название", "Тип", "Модель", "Серийный номер", "Статус", "Местоположение", "Количество"]
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+        
+        # Получаем данные активов
+        query = """
+        SELECT a.asset_id, a.name, at.type_name, a.model, a.serial_number, 
+               a.current_status, l.location_name, a.quantity
+        FROM Assets a
+        JOIN Asset_Types at ON a.type_id = at.type_id
+        JOIN Locations l ON a.location_id = l.location_id
+        ORDER BY a.asset_id
+        """
+        
+        rows = self.db.execute_query(query)
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = data_alignment
+        
+        # Регулируем ширину столбцов
+        for col in range(1, len(headers) + 1):
+            ws.column_dimensions[chr(64 + col)].width = 20
+
+    def _export_employees_sheet(self, wb, header_font, header_fill, header_alignment, data_alignment):
+        """Экспорт таблицы сотрудников"""
+        ws = wb.create_sheet("Сотрудники")
+        
+        headers = ["ID", "Фамилия", "Имя", "Отчество", "Должность", "Email", "Телефон"]
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+        
+        # Получаем данные сотрудников с присоединением таблицы должностей
+        query = """
+        SELECT e.employee_id, e.last_name, e.first_name, e.patronymic, 
+               COALESCE(p.position_name, ''), e.email, e.phone 
+        FROM Employees e
+        LEFT JOIN Positions p ON e.position_id = p.position_id
+        ORDER BY e.employee_id
+        """
+        
+        rows = self.db.execute_query(query)
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = data_alignment
+        
+        # Регулируем ширину столбцов
+        widths = [10, 15, 15, 15, 20, 25, 15]
+        for col, width in enumerate(widths, 1):
+            ws.column_dimensions[chr(64 + col)].width = width
+
+    def _export_history_sheet(self, wb, header_font, header_fill, header_alignment, data_alignment):
+        """Экспорт таблицы истории операций"""
+        ws = wb.create_sheet("История операций")
+        
+        headers = ["ID", "Актив", "Сотрудник", "Тип операции", "Дата операции", 
+                   "Плановый возврат", "Фактический возврат", "Примечания"]
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+        
+        # Получаем данные истории
+        query = """
+        SELECT uh.history_id, a.name, e.last_name || ' ' || e.first_name, 
+               uh.operation_type, uh.operation_date, uh.planned_return_date, 
+               uh.actual_return_date, COALESCE(uh.notes, '')
+        FROM Usage_History uh
+        JOIN Assets a ON uh.asset_id = a.asset_id
+        JOIN Employees e ON uh.employee_id = e.employee_id
+        ORDER BY uh.history_id DESC
+        """
+        
+        rows = self.db.execute_query(query)
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = data_alignment
+        
+        # Регулируем ширину столбцов
+        widths = [10, 25, 25, 15, 20, 20, 20, 40]
+        for col, width in enumerate(widths, 1):
+            ws.column_dimensions[chr(64 + col)].width = width
+
+    def _export_asset_types_sheet(self, wb, header_font, header_fill, header_alignment, data_alignment):
+        """Экспорт таблицы типов активов"""
+        ws = wb.create_sheet("Типы активов")
+        
+        headers = ["ID", "Название типа"]
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+        
+        # Получаем данные типов
+        query = "SELECT type_id, type_name FROM Asset_Types ORDER BY type_id"
+        
+        rows = self.db.execute_query(query)
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = data_alignment
+        
+        # Регулируем ширину столбцов
+        ws.column_dimensions['A'].width = 10
+        ws.column_dimensions['B'].width = 30
+
+    def _export_locations_sheet(self, wb, header_font, header_fill, header_alignment, data_alignment):
+        """Экспорт таблицы местоположений"""
+        ws = wb.create_sheet("Местоположения")
+        
+        headers = ["ID", "Название местоположения"]
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+        
+        # Получаем данные местоположений
+        query = "SELECT location_id, location_name FROM Locations ORDER BY location_id"
+        
+        rows = self.db.execute_query(query)
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = data_alignment
+        
+        # Регулируем ширину столбцов
+        ws.column_dimensions['A'].width = 10
+        ws.column_dimensions['B'].width = 40
+
+    def _export_statistics_sheet(self, wb, header_font, header_fill, header_alignment, data_alignment):
+        """Экспорт листа со статистикой"""
+        ws = wb.create_sheet("Статистика", 0)  # Добавляем в начало
+        
+        ws.title = "Статистика"
+        
+        # Заголовок
+        title_cell = ws.cell(row=1, column=1, value="СТАТИСТИКА СИСТЕМЫ")
+        title_cell.font = Font(bold=True, size=14, color="FFFFFF")
+        title_cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.merge_cells('A1:B1')
+        ws.row_dimensions[1].height = 25
+        
+        # Пустая строка
+        ws.row_dimensions[2].height = 5
+        
+        # Получаем статистику
+        row = 3
+        
+        # Всего активов
+        total_assets = self.db.execute_query("SELECT COUNT(*) FROM Assets")[0][0]
+        ws.cell(row=row, column=1, value="Всего активов:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=total_assets)
+        row += 1
+        
+        # Доступны
+        available = self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Доступен'")[0][0]
+        ws.cell(row=row, column=1, value="Доступно активов:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=available)
+        row += 1
+        
+        # Выданы
+        issued = self.db.execute_query("""
+            SELECT COUNT(*) FROM Usage_History 
+            WHERE operation_type = 'выдача' AND actual_return_date IS NULL
+        """)[0][0]
+        ws.cell(row=row, column=1, value="Выдано активов:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=issued)
+        row += 1
+        
+        # Списаны
+        written_off = self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Списан'")[0][0]
+        ws.cell(row=row, column=1, value="Списано активов:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=written_off)
+        row += 1
+        
+        # Просроченные
+        overdue = self.db.execute_query("""
+            SELECT COUNT(*) FROM Usage_History uh
+            WHERE uh.operation_type = 'выдача'
+                AND uh.actual_return_date IS NULL
+                AND DATE(uh.planned_return_date) < DATE('now')
+        """)[0][0]
+        ws.cell(row=row, column=1, value="Просроченные активы:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=overdue)
+        row += 2
+        
+        # Количество сотрудников
+        employees = self.db.execute_query("SELECT COUNT(*) FROM Employees")[0][0]
+        ws.cell(row=row, column=1, value="Количество сотрудников:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=employees)
+        row += 1
+        
+        # Всего операций
+        operations = self.db.execute_query("SELECT COUNT(*) FROM Usage_History")[0][0]
+        ws.cell(row=row, column=1, value="Всего операций:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=operations)
+        row += 2
+        
+        # Дата экспорта
+        ws.cell(row=row, column=1, value="Дата экспорта:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        
+        # Регулируем ширину столбцов
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 20
 
     def create_backup(self):
         """Создание резервной копии базы данных"""
