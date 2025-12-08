@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QAction
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
 from views.asset_dialog import AssetDialog
@@ -310,11 +310,13 @@ class MainWindow(QMainWindow):
         self.btn_add = QPushButton("➕ Добавить актив")
         self.btn_edit = QPushButton("✏️ Редактировать")
         self.btn_delete = QPushButton("🗑️ Удалить")
+        self.btn_import = QPushButton("📥 Импорт из Excel")
         self.btn_refresh = QPushButton("🔄 Обновить")
 
         buttons_layout.addWidget(self.btn_add)
         buttons_layout.addWidget(self.btn_edit)
         buttons_layout.addWidget(self.btn_delete)
+        buttons_layout.addWidget(self.btn_import)
         buttons_layout.addWidget(self.btn_refresh)
         buttons_layout.addStretch()
 
@@ -330,6 +332,7 @@ class MainWindow(QMainWindow):
         self.btn_add.clicked.connect(self.add_asset)
         self.btn_edit.clicked.connect(self.edit_asset)
         self.btn_delete.clicked.connect(self.delete_asset)
+        self.btn_import.clicked.connect(self.import_assets_from_excel)
 
     def setup_operations_tab(self):
         """Настройка вкладки операций"""
@@ -1337,6 +1340,140 @@ class MainWindow(QMainWindow):
     def check_for_updates(self):
         """Проверка обновлений"""
         QMessageBox.information(self, "Обновления", "Проверка обновлений...\nУ вас установлена последняя версия.")
+
+    def import_assets_from_excel(self):
+        """Импорт активов из Excel файла"""
+        print("📥 Открытие диалога импорта активов из Excel...")
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выбрать файл для импорта",
+            "",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            wb = load_workbook(file_path)
+            ws = wb.active
+
+            # Пропускаем заголовок и читаем данные
+            assets_count = 0
+            errors = []
+
+            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                try:
+                    # Распаковываем данные: название, тип, модель, серийный номер, местоположение, количество
+                    if len(row) < 6:
+                        errors.append(f"Строка {row_idx}: недостаточно данных")
+                        continue
+
+                    name = str(row[0]).strip() if row[0] else None
+                    type_name = str(row[1]).strip() if row[1] else None
+                    model = str(row[2]).strip() if row[2] else ""
+                    serial_number = str(row[3]).strip() if row[3] else ""
+                    location_name = str(row[4]).strip() if row[4] else None
+                    quantity = int(row[5]) if row[5] and str(row[5]).isdigit() else 1
+
+                    # Проверяем обязательные поля
+                    if not name:
+                        errors.append(f"Строка {row_idx}: отсутствует название актива")
+                        continue
+                    if not type_name:
+                        errors.append(f"Строка {row_idx}: отсутствует тип актива")
+                        continue
+                    if not location_name:
+                        errors.append(f"Строка {row_idx}: отсутствует местоположение")
+                        continue
+
+                    # Получаем или создаем тип актива
+                    type_id = self._get_or_create_asset_type(type_name)
+                    if not type_id:
+                        errors.append(f"Строка {row_idx}: не удалось создать тип '{type_name}'")
+                        continue
+
+                    # Получаем или создаем местоположение
+                    location_id = self._get_or_create_location(location_name)
+                    if not location_id:
+                        errors.append(f"Строка {row_idx}: не удалось создать местоположение '{location_name}'")
+                        continue
+
+                    # Добавляем актив в базу данных
+                    query = """
+                    INSERT INTO Assets (name, type_id, model, serial_number, location_id, current_status, quantity)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """
+                    self.db.execute_update(
+                        query,
+                        (name, type_id, model, serial_number, location_id, "Доступен", quantity)
+                    )
+                    assets_count += 1
+                    print(f"✅ Актив добавлен (строка {row_idx}): {name}")
+
+                except Exception as e:
+                    errors.append(f"Строка {row_idx}: {str(e)}")
+                    continue
+
+            # Показываем результаты
+            message = f"✅ Успешно импортировано активов: {assets_count}"
+            if errors:
+                message += f"\n\n⚠️ Ошибки при импорте ({len(errors)}):\n"
+                message += "\n".join(errors[:10])  # Показываем первые 10 ошибок
+                if len(errors) > 10:
+                    message += f"\n... и еще {len(errors) - 10} ошибок"
+
+            QMessageBox.information(self, "Результаты импорта", message)
+
+            # Обновляем таблицу активов
+            if assets_count > 0:
+                self.load_assets_data()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при импорте файла:\n{str(e)}")
+
+    def _get_or_create_asset_type(self, type_name):
+        """Получает ID типа актива, если существует, или создает новый"""
+        try:
+            # Проверяем, существует ли тип
+            result = self.db.execute_query(
+                "SELECT type_id FROM Asset_Types WHERE type_name = ?",
+                (type_name,)
+            )
+            if result:
+                return result[0][0]
+
+            # Создаем новый тип
+            new_id = self.db.execute_update(
+                "INSERT INTO Asset_Types (type_name) VALUES (?)",
+                (type_name,)
+            )
+            return new_id
+        except Exception as e:
+            print(f"❌ Ошибка при работе с типом актива: {e}")
+            return None
+
+    def _get_or_create_location(self, location_name):
+        """Получает ID местоположения, если существует, или создает новое"""
+        try:
+            # Проверяем, существует ли местоположение
+            result = self.db.execute_query(
+                "SELECT location_id FROM Locations WHERE location_name = ?",
+                (location_name,)
+            )
+            if result:
+                return result[0][0]
+
+            # Создаем новое местоположение
+            new_id = self.db.execute_update(
+                "INSERT INTO Locations (location_name) VALUES (?)",
+                (location_name,)
+            )
+            return new_id
+        except Exception as e:
+            print(f"❌ Ошибка при работе с местоположением: {e}")
+            return None
 
     def closeEvent(self, event):
         """Обработчик закрытия окна приложения"""
