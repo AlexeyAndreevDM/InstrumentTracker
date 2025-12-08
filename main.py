@@ -1,4 +1,7 @@
 import sys
+import csv
+from datetime import datetime
+from pathlib import Path
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QWidget, QPushButton, QMessageBox, QHBoxLayout, QDialog,
                              QTabWidget, QLabel, QDateEdit, QComboBox, QGridLayout,
@@ -6,6 +9,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QAction
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 
 from views.asset_dialog import AssetDialog
 from views.issue_dialog import IssueDialog
@@ -431,11 +436,9 @@ class MainWindow(QMainWindow):
 
         self.btn_export_csv = QPushButton("💾 Экспорт в CSV")
         self.btn_export_excel = QPushButton("📊 Экспорт в Excel")
-        self.btn_print_report = QPushButton("🖨️ Печать отчета")
 
         export_buttons_layout.addWidget(self.btn_export_csv)
         export_buttons_layout.addWidget(self.btn_export_excel)
-        export_buttons_layout.addWidget(self.btn_print_report)
         export_buttons_layout.addStretch()
 
         layout.addLayout(export_buttons_layout)
@@ -450,7 +453,6 @@ class MainWindow(QMainWindow):
         self.btn_inventory_report.clicked.connect(self.generate_inventory_report)
         self.btn_export_csv.clicked.connect(self.export_to_csv)
         self.btn_export_excel.clicked.connect(self.export_to_excel)
-        self.btn_print_report.clicked.connect(self.print_report)
 
         # Текущий тип отчета для экспорта
         self.current_report_type = None
@@ -733,8 +735,48 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Сначала сгенерируйте отчет!")
             return
 
-        # Временная заглушка - нужно реализовать экспорт
-        QMessageBox.information(self, "Экспорт", "Функция экспорта в CSV будет реализована в следующей версии")
+        # Выбираем путь для сохранения файла
+        report_name = self.current_report_type or "report"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить отчет как CSV",
+            f"{report_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            model = self.reports_table.model()
+            
+            with open(file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
+                # Получаем количество столбцов и строк
+                row_count = model.rowCount()
+                col_count = model.columnCount()
+                
+                # Пишем заголовки
+                headers = []
+                for col in range(col_count):
+                    header = model.headerData(col, Qt.Orientation.Horizontal)
+                    headers.append(str(header) if header else "")
+                
+                writer = csv.writer(csvfile, delimiter=';')
+                writer.writerow(headers)
+                
+                # Пишем данные
+                for row in range(row_count):
+                    row_data = []
+                    for col in range(col_count):
+                        index = model.index(row, col)
+                        value = model.data(index)
+                        row_data.append(str(value) if value is not None else "")
+                    writer.writerow(row_data)
+            
+            QMessageBox.information(self, "Успех", f"Отчет успешно сохранен:\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка экспорта в CSV: {e}")
 
     def export_to_excel(self):
         """Экспорт текущего отчета в Excel"""
@@ -742,16 +784,75 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Сначала сгенерируйте отчет!")
             return
 
-        # Временная заглушка - нужно реализовать экспорт
-        QMessageBox.information(self, "Экспорт", "Функция экспорта в Excel будет реализована в следующей версии")
+        # Выбираем путь для сохранения файла
+        report_name = self.current_report_type or "report"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить отчет как Excel",
+            f"{report_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
 
-    def print_report(self):
-        """Печать отчета"""
-        if not self.reports_table.model():
-            QMessageBox.warning(self, "Ошибка", "Сначала сгенерируйте отчет!")
+        if not file_path:
             return
 
-        QMessageBox.information(self, "Печать", "Функция печати будет реализована в следующей версии")
+        try:
+            model = self.reports_table.model()
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Отчет"
+            
+            # Получаем количество столбцов и строк
+            row_count = model.rowCount()
+            col_count = model.columnCount()
+            
+            # Стили для заголовка
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            
+            # Пишем заголовки
+            for col in range(col_count):
+                header = model.headerData(col, Qt.Orientation.Horizontal)
+                header_text = str(header) if header else ""
+                cell = ws.cell(row=1, column=col+1, value=header_text)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            
+            # Пишем данные
+            for row in range(row_count):
+                for col in range(col_count):
+                    index = model.index(row, col)
+                    value = model.data(index)
+                    cell = ws.cell(row=row+2, column=col+1, value=value)
+                    cell.alignment = Alignment(wrap_text=True)
+            
+            # Автоматически регулируем ширину столбцов
+            for col in range(col_count):
+                max_length = 0
+                column_letter = chr(65 + col) if col < 26 else "A" + chr(65 + col - 26)
+                
+                for row in range(row_count + 1):
+                    try:
+                        cell_value = str(ws.cell(row=row+1, column=col+1).value or "")
+                        if len(cell_value) > max_length:
+                            max_length = len(cell_value)
+                    except:
+                        pass
+                
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[chr(65 + col) if col < 26 else "A" + chr(65 + col - 26)].width = adjusted_width
+            
+            wb.save(file_path)
+            QMessageBox.information(self, "Успех", f"Отчет успешно сохранен:\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка экспорта в Excel: {e}")
+
+    def print_report(self):
+        """Метод больше не используется"""
+        pass
 
     def generate_overdue_report(self):
         """Генерация отчета по просроченным активам"""
