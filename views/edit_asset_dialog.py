@@ -384,11 +384,17 @@ class EditAssetDialog(QDialog):
 
             # Если актив списан, добавляем запись в историю
             if self.write_off_checkbox.isChecked():
+                # Для списания используем первого доступного сотрудника (системный учёт)
+                employee_for_writeoff = self.db.execute_query(
+                    "SELECT employee_id FROM Employees LIMIT 1"
+                )
+                employee_id = employee_for_writeoff[0][0] if employee_for_writeoff else 1
+                
                 self.db.execute_update('''
                     INSERT INTO Usage_History 
                     (asset_id, employee_id, operation_type, operation_date, notes) 
-                    VALUES (?, NULL, 'списание', datetime('now'), ?)
-                ''', (self.asset_id, self.write_off_reason.toPlainText().strip()))
+                    VALUES (?, ?, 'списание', datetime('now'), ?)
+                ''', (self.asset_id, employee_id, self.write_off_reason.toPlainText().strip()))
 
             QMessageBox.information(self, "Успех", "Данные актива успешно обновлены!")
             self.accept()
