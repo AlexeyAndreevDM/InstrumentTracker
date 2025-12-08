@@ -2,7 +2,7 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QWidget, QPushButton, QMessageBox, QHBoxLayout, QDialog,
                              QTabWidget, QLabel, QDateEdit, QComboBox, QGridLayout,
-                             QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox)
+                             QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox, QButtonGroup)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QAction
@@ -205,8 +205,14 @@ class MainWindow(QMainWindow):
 
     def on_tab_changed(self, index):
         """Обработчик смены вкладки"""
-        if self.tabs.tabText(index) == "🏠 Панель управления":
+        tab_text = self.tabs.tabText(index)
+        
+        if tab_text == "🏠 Панель управления":
             self.update_dashboard()
+        elif tab_text == "📋 Каталог активов":
+            self.load_assets_data()
+        elif tab_text == "🔄 Операции":
+            self.load_history_data()
 
     def update_dashboard(self):
         """Обновление данных на панели управления"""
@@ -252,6 +258,10 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'db_connection'):
             return
 
+        # Очищаем старую модель
+        if hasattr(self, 'recent_operations_table') and self.recent_operations_table.model():
+            self.recent_operations_table.setModel(None)
+
         model = QSqlQueryModel()
 
         query = """
@@ -261,17 +271,10 @@ class MainWindow(QMainWindow):
                 WHEN uh.operation_type = 'возврат' THEN '📥 Возврат'
                 WHEN uh.operation_type = 'списание' THEN '🗑️ Списание'
                 ELSE uh.operation_type
-            END as 'Тип',
+            END as 'Тип операции',
             a.name as 'Актив',
             e.last_name || ' ' || e.first_name as 'Сотрудник',
-            uh.operation_date as 'Дата',
-            CASE 
-                WHEN uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL AND DATE(uh.planned_return_date) < DATE('now')
-                THEN '⚠️ Просрочено'
-                WHEN uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL
-                THEN '🔄 На руках'
-                ELSE '✅ Завершено'
-            END as 'Статус'
+            uh.operation_date as 'Дата операции'
         FROM Usage_History uh
         LEFT JOIN Employees e ON uh.employee_id = e.employee_id
         LEFT JOIN Assets a ON uh.asset_id = a.asset_id
@@ -279,7 +282,7 @@ class MainWindow(QMainWindow):
         LIMIT 10
         """
 
-        model.setQuery(query)
+        model.setQuery(query, self.db_connection)
         self.recent_operations_table.setModel(model)
         self.recent_operations_table.resizeColumnsToContents()
 
@@ -393,6 +396,19 @@ class MainWindow(QMainWindow):
         self.btn_overdue_report = QPushButton("📅 Отчет по просрочкам")
         self.btn_usage_report = QPushButton("📈 Отчет по использованию")
         self.btn_inventory_report = QPushButton("📋 Инвентаризационная ведомость")
+
+        # Создаем группу кнопок для эксклюзивного выбора
+        self.reports_button_group = QButtonGroup()
+        self.reports_button_group.addButton(self.btn_overdue_report, 0)
+        self.reports_button_group.addButton(self.btn_usage_report, 1)
+        self.reports_button_group.addButton(self.btn_inventory_report, 2)
+        
+        # Делаем кнопки переключаемыми (checkable)
+        for button in [self.btn_overdue_report, self.btn_usage_report, self.btn_inventory_report]:
+            button.setCheckable(True)
+        
+        # По умолчанию выбираем первую кнопку
+        self.btn_overdue_report.setChecked(True)
 
         reports_buttons_layout.addWidget(self.btn_overdue_report)
         reports_buttons_layout.addWidget(self.btn_usage_report)
@@ -508,6 +524,12 @@ class MainWindow(QMainWindow):
             uh.planned_return_date as 'План возврата',
             uh.actual_return_date as 'Факт возврата',
             CASE 
+                WHEN a.current_status = 'Выдан' THEN '📤 Выдан'
+                WHEN a.current_status = 'Доступен' THEN '✅ Доступен'
+                WHEN a.current_status = 'Списан' THEN '🗑️ Списан'
+                ELSE a.current_status
+            END as 'Статус актива',
+            CASE 
                 WHEN uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL AND DATE(uh.planned_return_date) < DATE('now')
                 THEN COALESCE(uh.notes, '') || ' [Просрочено]'
                 WHEN uh.actual_return_date IS NOT NULL AND DATE(uh.actual_return_date) > DATE(uh.planned_return_date)
@@ -546,6 +568,10 @@ class MainWindow(QMainWindow):
 
         for param in params:
             query_obj.addBindValue(param)
+
+        # Очищаем старую модель
+        if hasattr(self, 'history_table') and self.history_table.model():
+            self.history_table.setModel(None)
 
         if not query_obj.exec():
             error = query_obj.lastError().text()
@@ -629,7 +655,7 @@ class MainWindow(QMainWindow):
         print("➕ Открытие диалога добавления актива...")
         dialog = AssetDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.load_assets_data()
+            self._refresh_all_data()
 
     def edit_asset(self):
         """Редактирование выбранного актива"""
@@ -642,7 +668,7 @@ class MainWindow(QMainWindow):
         dialog = EditAssetDialog(asset_id, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             print("✅ Актив успешно отредактирован")
-            self.load_assets_data()
+            self._refresh_all_data()
 
     def delete_asset(self):
         """Удаление выбранного актива"""
@@ -662,25 +688,35 @@ class MainWindow(QMainWindow):
         # Показываем диалог - пользователь сам нажмет кнопку удаления внутри диалога
         dialog.exec()
 
+    def _refresh_all_data(self):
+        """Обновление всех таблиц и панелей после операции"""
+        self.load_assets_data()
+        self.load_history_data()
+        self.load_recent_operations()
+        
+        # Обновляем статистику на панели управления
+        if hasattr(self, 'total_assets_value'):
+            self.update_dashboard()
+
     def on_asset_dialog_finished(self, result, asset_id):
         """Обработчик завершения работы диалога редактирования/удаления"""
         if result == QDialog.DialogCode.Accepted:
-            print("✅ Операция с активом завершена, обновляем таблицу...")
-            self.load_assets_data()
+            print("✅ Операция с активом завершена, обновляем таблицы...")
+            self._refresh_all_data()
 
     def issue_asset(self):
         """Выдача актива сотруднику"""
         print("📤 Открытие диалога выдачи актива...")
         dialog = IssueDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.load_assets_data()
+            self._refresh_all_data()
 
     def return_asset(self):
         """Возврат актива"""
         print("📥 Открытие диалога возврата актива...")
         dialog = ReturnDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.load_assets_data()
+            self._refresh_all_data()
 
     def export_to_csv(self):
         """Экспорт текущего отчета в CSV"""
@@ -716,6 +752,10 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'db_connection'):
             return
 
+        # Очищаем старую модель
+        if hasattr(self, 'reports_table') and self.reports_table.model():
+            self.reports_table.setModel(None)
+
         model = QSqlQueryModel()
 
         query = """
@@ -724,18 +764,32 @@ class MainWindow(QMainWindow):
             a.model as 'Модель',
             e.last_name || ' ' || e.first_name as 'Сотрудник',
             uh.operation_date as 'Дата выдачи',
-            uh.planned_return_date as 'Планируемый возврат',
-            JULIANDAY('now') - JULIANDAY(uh.planned_return_date) as 'Дней просрочки'
+            uh.planned_return_date as 'Плановый возврат',
+            uh.actual_return_date as 'Фактический возврат',
+            CASE 
+                WHEN uh.actual_return_date IS NULL 
+                THEN CAST(JULIANDAY('now') - JULIANDAY(uh.planned_return_date) AS INTEGER)
+                ELSE CAST(JULIANDAY(uh.actual_return_date) - JULIANDAY(uh.planned_return_date) AS INTEGER)
+            END as 'Дней просрочки',
+            CASE 
+                WHEN uh.actual_return_date IS NULL THEN '⏰ Ещё не возвращен'
+                WHEN uh.actual_return_date IS NOT NULL AND DATE(uh.actual_return_date) > DATE(uh.planned_return_date)
+                THEN '⚠️ Возвращено с опозданием'
+                ELSE ''
+            END as 'Статус'
         FROM Usage_History uh
         JOIN Assets a ON uh.asset_id = a.asset_id
         JOIN Employees e ON uh.employee_id = e.employee_id
         WHERE uh.operation_type = 'выдача'
-            AND uh.actual_return_date IS NULL
-            AND DATE(uh.planned_return_date) < DATE('now')
+            AND (
+                (uh.actual_return_date IS NULL AND DATE(uh.planned_return_date) < DATE('now'))
+                OR
+                (uh.actual_return_date IS NOT NULL AND DATE(uh.actual_return_date) > DATE(uh.planned_return_date))
+            )
         ORDER BY uh.planned_return_date
         """
 
-        model.setQuery(query)
+        model.setQuery(query, self.db_connection)
         self.reports_table.setModel(model)
         self.reports_table.resizeColumnsToContents()
 

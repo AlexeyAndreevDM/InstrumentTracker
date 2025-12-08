@@ -150,7 +150,7 @@ class ReturnDialog(QDialog):
                 (asset_id,)
             )
 
-            # Обновляем запись в истории
+            # Обновляем запись в истории (отмечаем дату фактического возврата)
             self.db.execute_update('''
                 UPDATE Usage_History 
                 SET actual_return_date = ?, notes = ?
@@ -159,6 +159,14 @@ class ReturnDialog(QDialog):
                   AND operation_type = 'выдача'
                   AND actual_return_date IS NULL
             ''', (return_date, notes, asset_id, employee_id))
+
+            # Создаем НОВУЮ запись операции возврата в историю
+            return_notes = f"Возврат актива{'. ' + notes if notes else ''}"
+            self.db.execute_update('''
+                INSERT INTO Usage_History 
+                (asset_id, employee_id, operation_type, operation_date, notes)
+                VALUES (?, ?, 'возврат', ?, ?)
+            ''', (asset_id, employee_id, return_date, return_notes))
 
             QMessageBox.information(self, "Успех", "Актив успешно возвращен!")
             self.accept()
