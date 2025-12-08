@@ -99,13 +99,25 @@ class EditAssetDialog(QDialog):
         write_off_layout = QVBoxLayout(self.write_off_group)
 
         self.write_off_checkbox = QCheckBox("Списать актив")
+        
+        # Форма для количества и причины списания
+        writeoff_form = QFormLayout()
+        
+        self.write_off_quantity_spin = QSpinBox()
+        self.write_off_quantity_spin.setRange(1, 1000)
+        self.write_off_quantity_spin.setValue(1)
+        self.write_off_quantity_spin.setVisible(False)
+        
         self.write_off_reason = QTextEdit()
         self.write_off_reason.setMaximumHeight(60)
         self.write_off_reason.setPlaceholderText("Укажите причину списания...")
         self.write_off_reason.setVisible(False)
 
+        writeoff_form.addRow("Кол-во для списания:", self.write_off_quantity_spin)
+        writeoff_form.addRow("Причина списания:", self.write_off_reason)
+        
         write_off_layout.addWidget(self.write_off_checkbox)
-        write_off_layout.addWidget(self.write_off_reason)
+        write_off_layout.addLayout(writeoff_form)
 
         layout.addWidget(self.write_off_group)
         self.write_off_group.setVisible(False)
@@ -248,6 +260,7 @@ class EditAssetDialog(QDialog):
         if status == "Списан":
             self.write_off_group.setVisible(True)
             self.write_off_checkbox.setChecked(True)
+            self.write_off_quantity_spin.setMaximum(self.quantity_spin.value())
         else:
             self.write_off_group.setVisible(False)
             self.write_off_checkbox.setChecked(False)
@@ -261,6 +274,10 @@ class EditAssetDialog(QDialog):
     def on_write_off_toggled(self, checked):
         """Обработчик переключения чекбокса списания"""
         self.write_off_reason.setVisible(checked)
+        self.write_off_quantity_spin.setVisible(checked)
+        if checked:
+            # Устанавливаем максимальное количество = текущему количеству
+            self.write_off_quantity_spin.setMaximum(self.quantity_spin.value())
 
     def add_new_location(self):
         """Добавление нового местоположения"""
@@ -390,11 +407,30 @@ class EditAssetDialog(QDialog):
                 )
                 employee_id = employee_for_writeoff[0][0] if employee_for_writeoff else 1
                 
+                quantity_to_writeoff = self.write_off_quantity_spin.value()
+                current_qty = self.quantity_spin.value()
+                new_quantity = current_qty - quantity_to_writeoff
+                
+                # Обновляем количество при списании
+                if new_quantity > 0:
+                    # Если остаток остается, статус остается 'Доступен'
+                    self.db.execute_update(
+                        "UPDATE Assets SET quantity = ?, current_status = 'Доступен' WHERE asset_id = ?",
+                        (new_quantity, self.asset_id)
+                    )
+                else:
+                    # Если это последнее количество, устанавливаем 'Списан'
+                    self.db.execute_update(
+                        "UPDATE Assets SET quantity = 0, current_status = 'Списан' WHERE asset_id = ?",
+                        (self.asset_id,)
+                    )
+                
+                writeoff_notes = f"Списано: {quantity_to_writeoff} шт. Причина: {self.write_off_reason.toPlainText().strip()}"
                 self.db.execute_update('''
                     INSERT INTO Usage_History 
                     (asset_id, employee_id, operation_type, operation_date, notes) 
                     VALUES (?, ?, 'списание', datetime('now'), ?)
-                ''', (self.asset_id, employee_id, self.write_off_reason.toPlainText().strip()))
+                ''', (self.asset_id, employee_id, writeoff_notes))
 
             QMessageBox.information(self, "Успех", "Данные актива успешно обновлены!")
             self.accept()

@@ -223,7 +223,15 @@ class MainWindow(QMainWindow):
             total_assets = self.db.execute_query("SELECT COUNT(*) FROM Assets")[0][0]
             available_assets = \
             self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Доступен'")[0][0]
-            issued_assets = self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Выдан'")[0][0]
+            
+            # Подсчитываем КОЛИЧЕСТВО выданных единиц (не активов, а выданных штук)
+            issued_count_result = self.db.execute_query("""
+                SELECT COUNT(*)
+                FROM Usage_History
+                WHERE operation_type = 'выдача'
+                  AND actual_return_date IS NULL
+            """)
+            issued_assets = issued_count_result[0][0] if issued_count_result else 0
 
             overdue_assets = self.db.execute_query("""
                 SELECT COUNT(*) 
@@ -274,11 +282,12 @@ class MainWindow(QMainWindow):
             END as 'Тип операции',
             a.name as 'Актив',
             e.last_name || ' ' || e.first_name as 'Сотрудник',
+            COALESCE(uh.notes, '') as 'Кол-во / Примечание',
             uh.operation_date as 'Дата операции'
         FROM Usage_History uh
         LEFT JOIN Employees e ON uh.employee_id = e.employee_id
         LEFT JOIN Assets a ON uh.asset_id = a.asset_id
-        ORDER BY uh.operation_date DESC
+        ORDER BY uh.history_id DESC
         LIMIT 10
         """
 
@@ -842,16 +851,10 @@ class MainWindow(QMainWindow):
             a.serial_number as 'Серийный номер',
             a.current_status as 'Статус',
             l.location_name as 'Местоположение',
-            a.quantity as 'Количество',
-            CASE 
-                WHEN a.current_status = 'Выдан' THEN e.last_name || ' ' || e.first_name
-                ELSE ''
-            END as 'У кого'
+            a.quantity as 'Количество'
         FROM Assets a
         JOIN Asset_Types at ON a.type_id = at.type_id
         JOIN Locations l ON a.location_id = l.location_id
-        LEFT JOIN Usage_History uh ON a.asset_id = uh.asset_id AND uh.operation_type = 'выдача' AND uh.actual_return_date IS NULL
-        LEFT JOIN Employees e ON uh.employee_id = e.employee_id
         ORDER BY a.asset_id
         """
 

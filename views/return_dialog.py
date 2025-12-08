@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QComboBox, QDateEdit, QPushButton, QMessageBox, QTextEdit)
-from PyQt6.QtCore import QDate
+from PyQt6.QtCore import QDate, QDateTime
 from database.db_manager import DatabaseManager
 
 
@@ -91,20 +91,24 @@ class ReturnDialog(QDialog):
             return
 
         try:
-            # Загружаем активы, выданные этому сотруднику
+            # Загружаем активы, выданные этому сотруднику с информацией о количестве
             assets = self.db.execute_query("""
-                SELECT a.asset_id, a.name || ' (' || a.model || ') - до ' || uh.planned_return_date
+                SELECT a.asset_id, a.name || ' (' || a.model || ') - до ' || uh.planned_return_date, uh.notes
                 FROM Assets a
                 JOIN Usage_History uh ON a.asset_id = uh.asset_id
                 WHERE uh.employee_id = ? 
                   AND uh.operation_type = 'выдача'
                   AND uh.actual_return_date IS NULL
-                  AND a.current_status = 'Выдан'
+                  AND a.current_status IN ('Выдан', 'Доступен')
                 ORDER BY uh.planned_return_date
             """, (employee_id,))
 
-            for asset_id, asset_description in assets:
-                self.asset_combo.addItem(asset_description, asset_id)
+            for asset_id, asset_description, notes in assets:
+                # Извлекаем количество из примечаний
+                quantity_str = ""
+                if notes and "Кол-во выданных:" in notes:
+                    quantity_str = " - " + notes
+                self.asset_combo.addItem(asset_description + quantity_str, asset_id)
 
             if not assets:
                 self.asset_combo.addItem("⚠️ Нет активов для возврата", None)
@@ -126,6 +130,8 @@ class ReturnDialog(QDialog):
         try:
             employee_id = self.employee_combo.currentData()
             asset_id = self.asset_combo.currentData()
+            # Сохраняем дату возврата с временем для правильной сортировки
+            current_datetime = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
             return_date = self.return_date.date().toString("yyyy-MM-dd")
             notes = self.notes_input.toPlainText().strip() or None
 
@@ -144,10 +150,40 @@ class ReturnDialog(QDialog):
             if confirm != QMessageBox.StandardButton.Yes:
                 return
 
-            # Обновляем статус актива
-            self.db.execute_update(
-                "UPDATE Assets SET current_status = 'Доступен' WHERE asset_id = ?",
+            # Получаем текущее количество и информацию о выданном количестве
+            asset_data = self.db.execute_query(
+                "SELECT quantity FROM Assets WHERE asset_id = ?",
                 (asset_id,)
+            )
+            current_quantity = asset_data[0][0] if asset_data else 0
+
+            # Получаем записи о выдаче, чтобы узнать сколько было выдано
+            issue_records = self.db.execute_query('''
+                SELECT notes FROM Usage_History
+                WHERE asset_id = ? 
+                  AND employee_id = ? 
+                  AND operation_type = 'выдача'
+                  AND actual_return_date IS NULL
+            ''', (asset_id, employee_id))
+
+            quantity_issued = 0
+            if issue_records:
+                issue_notes = issue_records[0][0] or ""
+                # Извлекаем количество из примечаний: "Кол-во выданных: X шт."
+                if "Кол-во выданных:" in issue_notes:
+                    try:
+                        qty_text = issue_notes.split("Кол-во выданных:")[1].split("шт.")[0].strip()
+                        quantity_issued = int(qty_text)
+                    except (IndexError, ValueError):
+                        quantity_issued = 1
+                else:
+                    quantity_issued = 1
+
+            # Увеличиваем количество при возврате
+            new_quantity = current_quantity + quantity_issued
+            self.db.execute_update(
+                "UPDATE Assets SET quantity = ?, current_status = 'Доступен' WHERE asset_id = ?",
+                (new_quantity, asset_id)
             )
 
             # Обновляем запись в истории (отмечаем дату фактического возврата)
@@ -160,15 +196,15 @@ class ReturnDialog(QDialog):
                   AND actual_return_date IS NULL
             ''', (return_date, notes, asset_id, employee_id))
 
-            # Создаем НОВУЮ запись операции возврата в историю
-            return_notes = f"Возврат актива{'. ' + notes if notes else ''}"
+            # Создаем НОВУЮ запись операции возврата в историю с временем
+            return_notes = f"Возврат актива (Кол-во: {quantity_issued} шт.){'. ' + notes if notes else ''}"
             self.db.execute_update('''
                 INSERT INTO Usage_History 
                 (asset_id, employee_id, operation_type, operation_date, notes)
                 VALUES (?, ?, 'возврат', ?, ?)
-            ''', (asset_id, employee_id, return_date, return_notes))
+            ''', (asset_id, employee_id, current_datetime, return_notes))
 
-            QMessageBox.information(self, "Успех", "Актив успешно возвращен!")
+            QMessageBox.information(self, "Успех", f"Актив успешно возвращен!\nКол-во: {quantity_issued} шт.\nОсталось на складе: {new_quantity} шт.")
             self.accept()
 
         except Exception as e:

@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-                             QComboBox, QDateEdit, QPushButton, QMessageBox)
-from PyQt6.QtCore import QDate
+                             QComboBox, QDateEdit, QPushButton, QMessageBox, QSpinBox, QLabel)
+from PyQt6.QtCore import QDate, QDateTime, QTime
 from database.db_manager import DatabaseManager
 
 
@@ -9,7 +9,7 @@ class IssueDialog(QDialog):
         super().__init__(parent)
         self.db = DatabaseManager()
         self.setWindowTitle("Выдать актив сотруднику")
-        self.setFixedSize(450, 300)  # Уменьшили высоту, т.к. убрали информационное окно
+        self.setFixedSize(450, 350)
         self.setup_ui()
         self.load_dropdown_data()
 
@@ -25,6 +25,15 @@ class IssueDialog(QDialog):
 
         # Выбор актива (только доступные)
         self.asset_combo = QComboBox()
+        self.asset_combo.currentIndexChanged.connect(self.on_asset_changed)
+
+        # Информация о доступном количестве
+        self.available_quantity_label = QLabel("Доступно: 0")
+
+        # Количество для выдачи
+        self.quantity_spin = QSpinBox()
+        self.quantity_spin.setRange(1, 1000)
+        self.quantity_spin.setValue(1)
 
         # Даты
         self.issue_date = QDateEdit()
@@ -38,6 +47,8 @@ class IssueDialog(QDialog):
         # Добавляем поля в форму
         form_layout.addRow("Сотрудник*:", self.employee_combo)
         form_layout.addRow("Актив*:", self.asset_combo)
+        form_layout.addRow("", self.available_quantity_label)
+        form_layout.addRow("Количество для выдачи*:", self.quantity_spin)
         form_layout.addRow("Дата выдачи*:", self.issue_date)
         form_layout.addRow("Планируемая дата возврата*:", self.planned_return_date)
 
@@ -77,19 +88,45 @@ class IssueDialog(QDialog):
                     display_text = full_name
                 self.employee_combo.addItem(display_text, employee_id)
 
-            # Загружаем только доступные активы
+            # Загружаем только доступные активы с количеством
             assets = self.db.execute_query("""
-                SELECT a.asset_id, a.name || ' (' || a.model || ')' 
+                SELECT a.asset_id, a.name || ' (' || a.model || ')', a.quantity
                 FROM Assets a 
                 WHERE a.current_status = 'Доступен'
                 ORDER BY a.name
             """)
 
-            for asset_id, asset_description in assets:
-                self.asset_combo.addItem(asset_description, asset_id)
+            for asset_id, asset_description, quantity in assets:
+                display_text = f"{asset_description} - {quantity} шт."
+                self.asset_combo.addItem(display_text, asset_id)
+
+            # Обновляем информацию о доступном количестве для первого актива
+            self.on_asset_changed()
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных: {e}")
+
+    def on_asset_changed(self):
+        """Обновление информации о доступном количестве при смене актива"""
+        asset_id = self.asset_combo.currentData()
+        if asset_id is None:
+            self.available_quantity_label.setText("Доступно: 0")
+            self.quantity_spin.setMaximum(1)
+            return
+
+        try:
+            asset_info = self.db.execute_query(
+                "SELECT quantity FROM Assets WHERE asset_id = ?",
+                (asset_id,)
+            )
+
+            if asset_info:
+                available_qty = asset_info[0][0]
+                self.available_quantity_label.setText(f"Доступно: {available_qty} шт.")
+                self.quantity_spin.setMaximum(available_qty)
+                self.quantity_spin.setValue(1)
+        except Exception as e:
+            print(f"Ошибка при обновлении количества: {e}")
 
     def issue_asset(self):
         """Оформление выдачи актива"""
@@ -110,38 +147,54 @@ class IssueDialog(QDialog):
         try:
             employee_id = self.employee_combo.currentData()
             asset_id = self.asset_combo.currentData()
+            # Сохраняем дату с временем для правильной сортировки
+            current_datetime = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
             issue_date = self.issue_date.date().toString("yyyy-MM-dd")
             planned_return = self.planned_return_date.date().toString("yyyy-MM-dd")
+            quantity_issued = self.quantity_spin.value()
 
             # Получаем информацию для подтверждения
             employee_name = self.employee_combo.currentText().split(' (')[0]
-            asset_name = self.asset_combo.currentText()
+            asset_name = self.asset_combo.currentText().split(' - ')[0]
 
             # Подтверждение операции
             confirm = QMessageBox.question(
                 self,
                 "Подтверждение выдачи",
-                f"Выдать актив:\n{asset_name}\n\nСотруднику:\n{employee_name}\n\nДата возврата: {planned_return}",
+                f"Выдать актив:\n{asset_name}\n\nКол-во: {quantity_issued} шт.\nСотруднику:\n{employee_name}\n\nДата возврата: {planned_return}",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
 
             if confirm != QMessageBox.StandardButton.Yes:
                 return
 
-            # Обновляем статус актива
-            self.db.execute_update(
-                "UPDATE Assets SET current_status = 'Выдан' WHERE asset_id = ?",
+            # Получаем текущее количество
+            current_qty = self.db.execute_query(
+                "SELECT quantity FROM Assets WHERE asset_id = ?",
                 (asset_id,)
+            )[0][0]
+
+            # Вычисляем новое количество
+            new_quantity = current_qty - quantity_issued
+
+            # Определяем новый статус
+            new_status = 'Доступен' if new_quantity > 0 else 'Выдан'
+
+            # Обновляем количество и статус актива
+            self.db.execute_update(
+                "UPDATE Assets SET quantity = ?, current_status = ? WHERE asset_id = ?",
+                (new_quantity, new_status, asset_id)
             )
 
-            # Добавляем запись в историю
+            # Добавляем запись в историю с информацией о количестве
+            notes = f"Кол-во выданных: {quantity_issued} шт."
             self.db.execute_update('''
                 INSERT INTO Usage_History 
-                (asset_id, employee_id, operation_type, operation_date, planned_return_date) 
-                VALUES (?, ?, 'выдача', ?, ?)
-            ''', (asset_id, employee_id, issue_date, planned_return))
+                (asset_id, employee_id, operation_type, operation_date, planned_return_date, notes) 
+                VALUES (?, ?, 'выдача', ?, ?, ?)
+            ''', (asset_id, employee_id, current_datetime, planned_return, notes))
 
-            QMessageBox.information(self, "Успех", "Актив успешно выдан сотруднику!")
+            QMessageBox.information(self, "Успех", f"Актив успешно выдан сотруднику!\nВыдано: {quantity_issued} шт.\nОсталось: {new_quantity} шт.")
             self.accept()
 
         except Exception as e:
