@@ -87,8 +87,13 @@ class MainWindow(QMainWindow):
             self.requests_tab = QWidget()
             self.setup_requests_tab()
             self.tabs.addTab(self.requests_tab, "📬 Запросы")
+            
+            # Вкладка 4: Аккаунты (только для админа)
+            self.accounts_tab = QWidget()
+            self.setup_accounts_tab()
+            self.tabs.addTab(self.accounts_tab, "👥 Аккаунты")
 
-        # Вкладка 4: Отчеты
+        # Вкладка 5: Отчеты
         self.reports_tab = QWidget()
         self.setup_reports_tab()
         self.tabs.addTab(self.reports_tab, "📊 Отчеты")
@@ -97,6 +102,10 @@ class MainWindow(QMainWindow):
         
         # Загружаем данные ПОСЛЕ инициализации всех UI элементов
         self.load_assets_data()
+        
+        # Если админ, загружаем аккаунты
+        if self.current_user.get('role') == 'admin':
+            self.load_accounts_data()
 
         print("✅ Интерфейс инициализирован")
 
@@ -118,7 +127,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
 
         exit_action = QAction("🚪 Выход", self)
-        exit_action.triggered.connect(self.close)
+        exit_action.triggered.connect(self.logout)
         file_menu.addAction(exit_action)
 
         # Меню Справка
@@ -1545,6 +1554,53 @@ class MainWindow(QMainWindow):
         # Загружаем данные
         self.load_requests_data()
 
+    def setup_accounts_tab(self):
+        """Настройка вкладки управления аккаунтами (только для админа)"""
+        layout = QVBoxLayout(self.accounts_tab)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Заголовок
+        title_label = QLabel("👥 Управление аккаунтами пользователей")
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px; background-color: #e8f5e9; color: #000000; border-radius: 5px;")
+        layout.addWidget(title_label)
+
+        # Кнопка обновления
+        refresh_btn = QPushButton("🔄 Обновить")
+        refresh_btn.clicked.connect(self.load_accounts_data)
+        layout.addWidget(refresh_btn)
+
+        # Таблица аккаунтов
+        self.accounts_table = QTableView()
+        layout.addWidget(self.accounts_table)
+
+    def load_accounts_data(self):
+        """Загрузка списка всех аккаунтов"""
+        print("🔄 Загрузка аккаунтов...")
+
+        model = QSqlQueryModel()
+
+        query = """
+        SELECT 
+            u.user_id as 'ID',
+            e.last_name || ' ' || e.first_name as 'ФИО',
+            u.username as 'Логин',
+            u.password as 'Пароль (хеш)',
+            u.role as 'Роль',
+            CASE u.is_active WHEN 1 THEN 'Активен' ELSE 'Неактивен' END as 'Статус',
+            u.created_at as 'Дата создания'
+        FROM Users u
+        LEFT JOIN Employees e ON u.employee_id = e.employee_id
+        ORDER BY u.created_at DESC
+        """
+
+        model.setQuery(query, self.db_connection)
+        self.accounts_table.setModel(model)
+        self.accounts_table.resizeColumnsToContents()
+
+        row_count = model.rowCount()
+        print(f"✅ Загружено аккаунтов: {row_count}")
+
     def load_requests_data(self):
         """Загрузка списка запросов на выдачу активов"""
         print("🔄 Загрузка запросов на выдачу активов...")
@@ -1571,7 +1627,12 @@ class MainWindow(QMainWindow):
             e.last_name || ' ' || e.first_name as 'Сотрудник',
             ar.request_date as 'Дата запроса',
             ar.planned_return_date as 'План возврата',
-            ar.status as 'Статус',
+            CASE ar.status
+                WHEN 'pending' THEN 'Ожидает'
+                WHEN 'approved' THEN 'Одобрено'
+                WHEN 'rejected' THEN 'Отклонено'
+                ELSE ar.status
+            END as 'Статус',
             COALESCE(ar.notes, '') as 'Примечание'
         FROM Asset_Requests ar
         JOIN Assets a ON ar.asset_id = a.asset_id
@@ -1714,9 +1775,21 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'requests_table'):
                 self.load_requests_data()
 
+    def logout(self):
+        """Выход и возврат на экран авторизации"""
+        reply = QMessageBox.question(
+            self,
+            "Выход",
+            "Вы уверены, что хотите выйти?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.close()
+
     def closeEvent(self, event):
         """Обработчик закрытия окна приложения"""
-        print("🛑 Закрытие приложения...")
+        print("🛑 Закрытие окна...")
         
         # Останавливаем проверку уведомлений
         if hasattr(self, 'notification_manager'):
@@ -1729,26 +1802,30 @@ def main():
     print("🎯 Запуск приложения...")
     app = QApplication(sys.argv)
     
-    # Показываем окно входа
-    login_dialog = LoginDialog()
-    current_user = None
+    while True:
+        # Показываем окно входа
+        login_dialog = LoginDialog()
+        current_user = None
+        
+        def on_login_success(user_data):
+            nonlocal current_user
+            current_user = user_data
+            login_dialog.accept()
+        
+        login_dialog.login_successful.connect(on_login_success)
+        
+        if login_dialog.exec() == QDialog.DialogCode.Accepted and current_user:
+            # Создаем главное окно с текущим пользователем
+            window = MainWindow(current_user)
+            window.show()
+            print("✅ Приложение запущено успешно")
+            app.exec()  # Ждем закрытия окна
+            # После закрытия окна, цикл продолжится и покажет логин снова
+        else:
+            print("❌ Вход отменен")
+            break
     
-    def on_login_success(user_data):
-        nonlocal current_user
-        current_user = user_data
-        login_dialog.accept()
-    
-    login_dialog.login_successful.connect(on_login_success)
-    
-    if login_dialog.exec() == QDialog.DialogCode.Accepted and current_user:
-        # Создаем главное окно с текущим пользователем
-        window = MainWindow(current_user)
-        window.show()
-        print("✅ Приложение запущено успешно")
-        sys.exit(app.exec())
-    else:
-        print("❌ Вход отменен")
-        sys.exit(0)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
