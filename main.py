@@ -16,22 +16,32 @@ from views.asset_dialog import AssetDialog
 from views.issue_dialog import IssueDialog
 from views.return_dialog import ReturnDialog
 from views.edit_asset_dialog import EditAssetDialog
+from views.login_dialog import LoginDialog
+from views.request_dialog import RequestAssetDialog
 from database.db_manager import DatabaseManager
 from notification_manager import NotificationManager
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, current_user=None):
         super().__init__()
         print("🚀 Инициализация главного окна...")
         self.db = DatabaseManager()
+        
+        # Сохраняем информацию о текущем пользователе
+        self.current_user = current_user or {
+            'user_id': 0,
+            'username': 'guest',
+            'role': 'guest',
+            'employee_id': None,
+            'full_name': 'Guest'
+        }
         
         # Инициализация менеджера уведомлений
         self.notification_manager = NotificationManager(self)
         self.notification_manager.start_checking(interval_ms=60000)  # Проверка каждую минуту
         
         self.init_ui()
-        self.load_assets_data()
 
     def init_ui(self):
         """Инициализация пользовательского интерфейса"""
@@ -47,6 +57,11 @@ class MainWindow(QMainWindow):
 
         # Основной layout
         layout = QVBoxLayout(central_widget)
+        
+        # Информация о пользователе
+        user_info_label = QLabel(f"👤 Вы вошли как: {self.current_user.get('full_name', 'Unknown')} ({self.current_user.get('role', 'user').upper()})")
+        user_info_label.setStyleSheet("padding: 10px; background-color: #e3f2fd; color: #1976d2; font-weight: bold; border-radius: 5px;")
+        layout.addWidget(user_info_label)
 
         # Создаем вкладки
         self.tabs = QTabWidget()
@@ -56,22 +71,32 @@ class MainWindow(QMainWindow):
         self.setup_dashboard_tab()
         self.tabs.addTab(self.dashboard_tab, "🏠 Панель управления")
 
-        # Вкладка 1: Каталог активов
-        self.assets_tab = QWidget()
-        self.setup_assets_tab()
-        self.tabs.addTab(self.assets_tab, "📋 Каталог активов")
+        # Вкладка 1: Каталог активов (доступ: админ)
+        if self.current_user.get('role') == 'admin':
+            self.assets_tab = QWidget()
+            self.setup_assets_tab()
+            self.tabs.addTab(self.assets_tab, "📋 Каталог активов")
 
         # Вкладка 2: Операции
         self.operations_tab = QWidget()
         self.setup_operations_tab()
         self.tabs.addTab(self.operations_tab, "🔄 Операции")
 
-        # Вкладка 3: Отчеты
+        # Вкладка 3: Запросы на выдачу (только для админа)
+        if self.current_user.get('role') == 'admin':
+            self.requests_tab = QWidget()
+            self.setup_requests_tab()
+            self.tabs.addTab(self.requests_tab, "📬 Запросы")
+
+        # Вкладка 4: Отчеты
         self.reports_tab = QWidget()
         self.setup_reports_tab()
         self.tabs.addTab(self.reports_tab, "📊 Отчеты")
 
         layout.addWidget(self.tabs)
+        
+        # Загружаем данные ПОСЛЕ инициализации всех UI элементов
+        self.load_assets_data()
 
         print("✅ Интерфейс инициализирован")
 
@@ -380,11 +405,18 @@ class MainWindow(QMainWindow):
 
         self.btn_issue = QPushButton("📤 Выдать актив")
         self.btn_return = QPushButton("📥 Вернуть актив")
+        self.btn_request = QPushButton("📝 Запросить актив")  # Новая кнопка для пользователей
         self.btn_history = QPushButton("🔄 Обновить историю")
 
         operations_layout.addWidget(self.btn_issue)
         operations_layout.addWidget(self.btn_return)
+        operations_layout.addWidget(self.btn_request)
         operations_layout.addWidget(self.btn_history)
+        
+        # Скрываем кнопку выдачи для обычных пользователей
+        if self.current_user.get('role') != 'admin':
+            self.btn_issue.hide()
+        
         operations_layout.addStretch()
 
         layout.addLayout(operations_layout)
@@ -396,6 +428,7 @@ class MainWindow(QMainWindow):
         # Подключаем кнопки
         self.btn_issue.clicked.connect(self.issue_asset)
         self.btn_return.clicked.connect(self.return_asset)
+        self.btn_request.clicked.connect(self.request_asset)
         self.btn_history.clicked.connect(self.load_history_data)
         self.btn_apply_filters.clicked.connect(self.load_history_data)
         self.btn_clear_filters.clicked.connect(self.clear_history_filters)
@@ -506,8 +539,10 @@ class MainWindow(QMainWindow):
             if row_count == 0:
                 print("⚠️ В базе данных нет записей.")
 
-        self.assets_table.setModel(model)
-        self.assets_table.resizeColumnsToContents()
+        # Устанавливаем модель только если таблица существует (для админов)
+        if hasattr(self, 'assets_table'):
+            self.assets_table.setModel(model)
+            self.assets_table.resizeColumnsToContents()
 
     def load_history_data(self):
         """Загрузка истории операций с фильтрами"""
@@ -1475,6 +1510,210 @@ class MainWindow(QMainWindow):
             print(f"❌ Ошибка при работе с местоположением: {e}")
             return None
 
+    def setup_requests_tab(self):
+        """Настройка вкладки запросов на выдачу активов (только для админа)"""
+        layout = QVBoxLayout(self.requests_tab)
+
+        # Заголовок
+        title_label = QLabel("📬 Запросы на выдачу активов")
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px;")
+        layout.addWidget(title_label)
+
+        # Панель кнопок
+        buttons_layout = QHBoxLayout()
+
+        self.btn_approve_request = QPushButton("✅ Одобрить")
+        self.btn_reject_request = QPushButton("❌ Отклонить")
+        self.btn_refresh_requests = QPushButton("🔄 Обновить")
+
+        buttons_layout.addWidget(self.btn_approve_request)
+        buttons_layout.addWidget(self.btn_reject_request)
+        buttons_layout.addWidget(self.btn_refresh_requests)
+        buttons_layout.addStretch()
+
+        layout.addLayout(buttons_layout)
+
+        # Таблица запросов
+        self.requests_table = QTableView()
+        layout.addWidget(self.requests_table)
+
+        # Подключаем кнопки
+        self.btn_approve_request.clicked.connect(self.approve_request)
+        self.btn_reject_request.clicked.connect(self.reject_request)
+        self.btn_refresh_requests.clicked.connect(self.load_requests_data)
+
+        # Загружаем данные
+        self.load_requests_data()
+
+    def load_requests_data(self):
+        """Загрузка списка запросов на выдачу активов"""
+        print("🔄 Загрузка запросов на выдачу активов...")
+
+        if not hasattr(self, 'db_connection'):
+            self.db_connection = QSqlDatabase.addDatabase("QSQLITE")
+            self.db_connection.setDatabaseName("inventory.db")
+
+        if not self.db_connection.isOpen():
+            if not self.db_connection.open():
+                return
+
+        # Очищаем старую модель
+        if hasattr(self, 'requests_table') and self.requests_table.model():
+            self.requests_table.setModel(None)
+
+        model = QSqlQueryModel()
+
+        query = """
+        SELECT 
+            ar.request_id as 'ID',
+            a.name as 'Актив',
+            a.model as 'Модель',
+            e.last_name || ' ' || e.first_name as 'Сотрудник',
+            ar.request_date as 'Дата запроса',
+            ar.planned_return_date as 'План возврата',
+            ar.status as 'Статус',
+            COALESCE(ar.notes, '') as 'Примечание'
+        FROM Asset_Requests ar
+        JOIN Assets a ON ar.asset_id = a.asset_id
+        JOIN Employees e ON ar.employee_id = e.employee_id
+        ORDER BY ar.request_date DESC
+        """
+
+        model.setQuery(query, self.db_connection)
+        
+        # Устанавливаем модель только если таблица существует (только для админов)
+        if hasattr(self, 'requests_table'):
+            self.requests_table.setModel(model)
+            self.requests_table.resizeColumnsToContents()
+
+        row_count = model.rowCount()
+        print(f"✅ Загружено запросов: {row_count}")
+
+    def approve_request(self):
+        """Одобрение запроса на выдачу актива"""
+        current_index = self.requests_table.currentIndex()
+        if not current_index.isValid():
+            QMessageBox.warning(self, "Ошибка", "Выберите запрос из таблицы!")
+            return
+
+        model = self.requests_table.model()
+        row = current_index.row()
+
+        request_id = model.data(model.index(row, 0))
+        asset_name = model.data(model.index(row, 1))
+        employee_name = model.data(model.index(row, 3))
+
+        # Подтверждение
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            f"Одобрить запрос на выдачу '{asset_name}' для {employee_name}?"
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # Получаем информацию из запроса
+            req_data = self.db.execute_query(
+                "SELECT asset_id, employee_id, planned_return_date, notes FROM Asset_Requests WHERE request_id = ?",
+                (request_id,)
+            )[0]
+
+            asset_id, employee_id, planned_return_date, notes = req_data
+
+            # Проверяем количество доступных активов
+            asset_data = self.db.execute_query(
+                "SELECT quantity, current_status FROM Assets WHERE asset_id = ?",
+                (asset_id,)
+            )[0]
+
+            current_qty, status = asset_data
+
+            if current_qty <= 0:
+                QMessageBox.warning(self, "Ошибка", "На складе нет доступных единиц!")
+                return
+
+            # Создаем операцию выдачи
+            history_query = """
+            INSERT INTO Usage_History (asset_id, employee_id, operation_type, operation_date, planned_return_date, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+
+            self.db.execute_update(
+                history_query,
+                (asset_id, employee_id, 'выдача', datetime.now().isoformat(), planned_return_date, notes)
+            )
+
+            # Обновляем количество активов
+            new_qty = current_qty - 1
+            new_status = 'Выдан' if new_qty == 0 else 'Доступен'
+
+            self.db.execute_update(
+                "UPDATE Assets SET quantity = ?, current_status = ? WHERE asset_id = ?",
+                (new_qty, new_status, asset_id)
+            )
+
+            # Обновляем статус запроса
+            self.db.execute_update(
+                "UPDATE Asset_Requests SET status = ?, approved_by = ?, approved_at = ? WHERE request_id = ?",
+                ('approved', int(self.current_user.get('user_id', 0)), datetime.now().isoformat(), request_id)
+            )
+
+            QMessageBox.information(self, "Успех", "✅ Запрос одобрен и актив выдан!")
+            self._refresh_all_data()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при одобрении запроса:\n{str(e)}")
+
+    def reject_request(self):
+        """Отклонение запроса на выдачу актива"""
+        current_index = self.requests_table.currentIndex()
+        if not current_index.isValid():
+            QMessageBox.warning(self, "Ошибка", "Выберите запрос из таблицы!")
+            return
+
+        model = self.requests_table.model()
+        row = current_index.row()
+
+        request_id = model.data(model.index(row, 0))
+        asset_name = model.data(model.index(row, 1))
+
+        # Подтверждение
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            f"Отклонить запрос на выдачу '{asset_name}'?"
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # Обновляем статус запроса
+            self.db.execute_update(
+                "UPDATE Asset_Requests SET status = ?, approved_by = ?, approved_at = ? WHERE request_id = ?",
+                ('rejected', int(self.current_user.get('user_id', 0)), datetime.now().isoformat(), request_id)
+            )
+
+            QMessageBox.information(self, "Успех", "✅ Запрос отклонен!")
+            self.load_requests_data()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при отклонении запроса:\n{str(e)}")
+
+    def request_asset(self):
+        """Создание запроса на выдачу актива (для обычных пользователей)"""
+        if self.current_user.get('role') not in ['user', 'admin']:
+            QMessageBox.warning(self, "Ошибка", "У вас нет прав для создания запроса!")
+            return
+
+        dialog = RequestAssetDialog(self.current_user, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Обновляем список запросов только если таблица существует (для админов)
+            if hasattr(self, 'requests_table'):
+                self.load_requests_data()
+
     def closeEvent(self, event):
         """Обработчик закрытия окна приложения"""
         print("🛑 Закрытие приложения...")
@@ -1489,10 +1728,27 @@ class MainWindow(QMainWindow):
 def main():
     print("🎯 Запуск приложения...")
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    print("✅ Приложение запущено успешно")
-    sys.exit(app.exec())
+    
+    # Показываем окно входа
+    login_dialog = LoginDialog()
+    current_user = None
+    
+    def on_login_success(user_data):
+        nonlocal current_user
+        current_user = user_data
+        login_dialog.accept()
+    
+    login_dialog.login_successful.connect(on_login_success)
+    
+    if login_dialog.exec() == QDialog.DialogCode.Accepted and current_user:
+        # Создаем главное окно с текущим пользователем
+        window = MainWindow(current_user)
+        window.show()
+        print("✅ Приложение запущено успешно")
+        sys.exit(app.exec())
+    else:
+        print("❌ Вход отменен")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
