@@ -65,12 +65,16 @@ class MainWindow(QMainWindow):
             self.notification_manager.show_notification('info', '', greeting, persistent=False, variant='dark')
 
             # Для обычных пользователей показываем просрочки и напоминания на завтра
-            # Задержка 1.5 сек чтобы приветствие было видно первым
+            # Задержка 4.5 сек: приветствие автозакрывается через 4 сек, затем показываем уведомления
             if self.current_user and self.current_user.get('role') != 'admin':
                 employee_id = self.current_user.get('employee_id')
                 if employee_id:
                     print(f"🔔 Проверка уведомлений для сотрудника {employee_id}...")
-                    QTimer.singleShot(1500, lambda: self.notification_manager.check_user_notifications(employee_id))
+                    QTimer.singleShot(4500, lambda: self.notification_manager.check_user_notifications(employee_id))
+            # Для админов показываем уведомление о всех просрочках
+            elif self.current_user and self.current_user.get('role') == 'admin':
+                print("👨‍💼 Проверка просрочек для админа...")
+                QTimer.singleShot(4500, lambda: self.notification_manager.check_admin_overdue())
         except Exception as e:
             print(f"❌ Ошибка при показе стартовых уведомлений: {e}")
             import traceback

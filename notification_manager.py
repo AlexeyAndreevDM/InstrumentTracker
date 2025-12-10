@@ -402,6 +402,69 @@ class NotificationManager:
         except Exception as e:
             print(f"❌ Ошибка при проверке уведомлений пользователя: {e}")
     
+    def check_admin_overdue(self):
+        """Проверить все просрочки в системе и показать админу уведомление"""
+        try:
+            today = QDate.currentDate()
+            
+            # Получаем ВСЕ просроченные активы (выданные, но не возвращённые, и срок уже прошёл)
+            query = """
+                SELECT 
+                    uh.history_id,
+                    e.last_name || ' ' || e.first_name || COALESCE(' ' || e.patronymic, '') as employee_full_name,
+                    a.name,
+                    uh.planned_return_date
+                FROM Usage_History uh
+                JOIN Assets a ON uh.asset_id = a.asset_id
+                JOIN Employees e ON uh.employee_id = e.employee_id
+                WHERE uh.operation_type = 'выдача'
+                    AND uh.actual_return_date IS NULL
+                    AND DATE(uh.planned_return_date) < DATE('now')
+                ORDER BY uh.planned_return_date ASC
+            """
+            
+            overdue_results = self.db.execute_query(query)
+            
+            if overdue_results:
+                # Собираем список просроченных активов по сотрудникам
+                overdue_by_employee = {}
+                for row in overdue_results:
+                    history_id, employee_name, asset_name, planned_date_str = row
+                    planned_date = QDate.fromString(planned_date_str, "yyyy-MM-dd")
+                    days_overdue = abs(today.daysTo(planned_date))
+                    
+                    if employee_name not in overdue_by_employee:
+                        overdue_by_employee[employee_name] = []
+                    overdue_by_employee[employee_name].append({
+                        'asset': asset_name,
+                        'days': days_overdue
+                    })
+                
+                # Показываем первое уведомление с первым сотрудником
+                first_employee = list(overdue_by_employee.keys())[0]
+                first_assets = overdue_by_employee[first_employee]
+                
+                # Формируем сообщение
+                title = '🚨 Обнаружена просрочка!'
+                message = f'у сотрудника {first_employee}'
+                
+                # Если есть несколько просроченных активов у одного сотрудника, добавляем количество
+                if len(first_assets) > 1:
+                    message += f'\n({len(first_assets)} активов)'
+                
+                self.show_notification('error', title, message, persistent=True)
+                
+                # Если есть ещё сотрудники с просрочками, показываем дополнительные уведомления
+                for idx, (employee_name, assets) in enumerate(list(overdue_by_employee.items())[1:], 1):
+                    # Небольшая задержка между уведомлениями
+                    QTimer.singleShot(500 * (idx + 1), lambda name=employee_name, asset_list=assets: 
+                        self.show_notification('error', '🚨 Обнаружена просрочка!', 
+                                             f'у сотрудника {name}' + (f'\n({len(asset_list)} активов)' if len(asset_list) > 1 else ''),
+                                             persistent=True))
+            
+        except Exception as e:
+            print(f"❌ Ошибка при проверке просрочек для админа: {e}")
+    
     def cleanup(self):
         """Очистка при закрытии приложения"""
         self.stop_checking()
