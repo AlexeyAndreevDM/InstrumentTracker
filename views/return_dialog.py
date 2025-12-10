@@ -5,9 +5,11 @@ from database.db_manager import DatabaseManager
 
 
 class ReturnDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, current_user=None):
         super().__init__(parent)
         self.db = DatabaseManager()
+        self.current_user = current_user
+        self.is_admin = current_user and current_user.get('role') == 'admin'
         self.setWindowTitle("Возврат актива")
         self.setFixedSize(500, 350)  # Уменьшили высоту
         self.setup_ui()
@@ -20,8 +22,9 @@ class ReturnDialog(QDialog):
         # Форма для ввода данных
         form_layout = QFormLayout()
 
-        # Выбор сотрудника
+        # Выбор сотрудника (только для админа)
         self.employee_combo = QComboBox()
+        self.employee_label = None  # Будет создана, если нужна
 
         # Выбор актива (только выданные этому сотруднику)
         self.asset_combo = QComboBox()
@@ -37,7 +40,13 @@ class ReturnDialog(QDialog):
         self.notes_input.setPlaceholderText("Комментарий к возврату (например: требуется поверка, поврежден...)")
 
         # Добавляем поля в форму
-        form_layout.addRow("Сотрудник*:", self.employee_combo)
+        if self.is_admin:
+            # Для админа показываем выбор сотрудника
+            form_layout.addRow("Сотрудник*:", self.employee_combo)
+        else:
+            # Для обычного пользователя скрываем выбор сотрудника
+            pass
+
         form_layout.addRow("Актив для возврата*:", self.asset_combo)
         form_layout.addRow("Дата возврата*:", self.return_date)
         form_layout.addRow("Комментарий:", self.notes_input)
@@ -57,27 +66,38 @@ class ReturnDialog(QDialog):
         # Подключаем кнопки и сигналы
         self.return_btn.clicked.connect(self.return_asset)
         self.cancel_btn.clicked.connect(self.reject)
-        self.employee_combo.currentIndexChanged.connect(self.update_assets_list)
+        if self.is_admin:
+            self.employee_combo.currentIndexChanged.connect(self.update_assets_list)
 
     def load_dropdown_data(self):
         """Загрузка данных для выпадающих списков"""
         try:
-            # Загружаем сотрудников - гарантированно уникальные
-            employees = self.db.execute_query("""
-                SELECT 
-                    employee_id,
-                    last_name || ' ' || first_name || ' ' || COALESCE(patronymic, '') as full_name,
-                    email
-                FROM Employees 
-                ORDER BY last_name, first_name
-            """)
+            if self.is_admin:
+                # Для админа: загружаем всех сотрудников
+                employees = self.db.execute_query("""
+                    SELECT 
+                        employee_id,
+                        last_name || ' ' || first_name || ' ' || COALESCE(patronymic, '') as full_name,
+                        email
+                    FROM Employees 
+                    ORDER BY last_name, first_name
+                """)
 
-            for employee_id, full_name, email in employees:
-                if email:
-                    display_text = f"{full_name} ({email})"
+                for employee_id, full_name, email in employees:
+                    if email:
+                        display_text = f"{full_name} ({email})"
+                    else:
+                        display_text = full_name
+                    self.employee_combo.addItem(display_text, employee_id)
+                
+                # Инициируем загрузку активов для первого сотрудника
+                self.update_assets_list()
+            else:
+                # Для обычного пользователя: берем его employee_id
+                if self.current_user and self.current_user.get('employee_id'):
+                    self.update_assets_list()
                 else:
-                    display_text = full_name
-                self.employee_combo.addItem(display_text, employee_id)
+                    QMessageBox.critical(self, "Ошибка", "Не удается определить сотрудника!")
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных: {e}")
@@ -86,7 +106,13 @@ class ReturnDialog(QDialog):
         """Обновление списка активов при выборе сотрудника"""
         self.asset_combo.clear()
 
-        employee_id = self.employee_combo.currentData()
+        # Определяем ID сотрудника
+        if self.is_admin:
+            employee_id = self.employee_combo.currentData()
+        else:
+            # Для обычного пользователя используем его ID
+            employee_id = self.current_user.get('employee_id') if self.current_user else None
+
         if not employee_id:
             return
 
@@ -119,16 +145,36 @@ class ReturnDialog(QDialog):
     def return_asset(self):
         """Оформление возврата актива"""
         # Проверяем обязательные поля
-        if self.employee_combo.currentData() is None:
-            QMessageBox.warning(self, "Ошибка", "Выберите сотрудника!")
-            return
+        if self.is_admin:
+            if self.employee_combo.currentData() is None:
+                QMessageBox.warning(self, "Ошибка", "Выберите сотрудника!")
+                return
+            employee_id = self.employee_combo.currentData()
+            employee_name = self.employee_combo.currentText().split(' (')[0]
+        else:
+            # Для обычного пользователя берем его ID
+            employee_id = self.current_user.get('employee_id') if self.current_user else None
+            if not employee_id:
+                QMessageBox.warning(self, "Ошибка", "Не удается определить вашу должность!")
+                return
+            # Получаем имя сотрудника из БД
+            emp_data = self.db.execute_query(
+                "SELECT last_name, first_name, patronymic FROM Employees WHERE employee_id = ?",
+                (employee_id,)
+            )
+            if emp_data:
+                last_name, first_name, patronymic = emp_data[0]
+                employee_name = f"{last_name} {first_name}".strip()
+                if patronymic:
+                    employee_name += f" {patronymic}"
+            else:
+                employee_name = "Неизвестный сотрудник"
 
         if self.asset_combo.currentData() is None:
             QMessageBox.warning(self, "Ошибка", "Выберите актив для возврата!")
             return
 
         try:
-            employee_id = self.employee_combo.currentData()
             asset_id = self.asset_combo.currentData()
             # Сохраняем дату возврата с временем для правильной сортировки
             current_datetime = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
@@ -136,14 +182,19 @@ class ReturnDialog(QDialog):
             notes = self.notes_input.toPlainText().strip() or None
 
             # Получаем информацию для подтверждения
-            employee_name = self.employee_combo.currentText().split(' (')[0]
             asset_name = self.asset_combo.currentText().split(' - до')[0]  # Убираем дату возврата
+
+            # Построение сообщения подтверждения
+            if self.is_admin:
+                confirm_message = f"Вернуть актив:\n{asset_name}\n\nОт сотрудника:\n{employee_name}"
+            else:
+                confirm_message = f"Вернуть актив:\n{asset_name}"
 
             # Подтверждение операции
             confirm = QMessageBox.question(
                 self,
                 "Подтверждение возврата",
-                f"Вернуть актив:\n{asset_name}\n\nОт сотрудника:\n{employee_name}",
+                confirm_message,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
 

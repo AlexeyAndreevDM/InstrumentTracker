@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QTabWidget, QLabel, QDateEdit, QComboBox, QGridLayout,
                              QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox, QButtonGroup)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QAction
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -40,8 +40,48 @@ class MainWindow(QMainWindow):
         # Инициализация менеджера уведомлений
         self.notification_manager = NotificationManager(self)
         self.notification_manager.start_checking(interval_ms=60000)  # Проверка каждую минуту
-        
+
+        # Флаг для показа уведомлений при первом показе окна
+        self._startup_notifications_shown = False
+
         self.init_ui()
+
+    def _run_startup_notifications(self):
+        """Показать приветственное уведомление и проверить уведомления пользователя."""
+        try:
+            # Приветственное сообщение при каждом запуске (persistent, dark style)
+            full_name = self.current_user.get('full_name') if self.current_user else None
+            if not full_name and self.current_user and self.current_user.get('employee_id'):
+                # Попробуем получить ФИО из БД
+                try:
+                    emp = self.db.execute_query("SELECT last_name || ' ' || first_name || COALESCE(' ' || patronymic, '') as full_name FROM Employees WHERE employee_id = ?", (self.current_user.get('employee_id'),))
+                    if emp and emp[0][0]:
+                        full_name = emp[0][0]
+                except Exception:
+                    full_name = None
+
+            greeting = f"Добро пожаловать, {full_name}!" if full_name else "Добро пожаловать!"
+            print(f"📬 Показ приветственного уведомления: {greeting}")
+            self.notification_manager.show_notification('info', '', greeting, persistent=False, variant='dark')
+
+            # Для обычных пользователей показываем просрочки и напоминания на завтра
+            if self.current_user and self.current_user.get('role') != 'admin':
+                employee_id = self.current_user.get('employee_id')
+                if employee_id:
+                    print(f"🔔 Проверка уведомлений для сотрудника {employee_id}...")
+                    self.notification_manager.check_user_notifications(employee_id)
+        except Exception as e:
+            print(f"❌ Ошибка при показе стартовых уведомлений: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def showEvent(self, event):
+        """Вызывается при показе окна - показываем уведомления при первом входе"""
+        super().showEvent(event)
+        if not self._startup_notifications_shown:
+            self._startup_notifications_shown = True
+            print("🪟 Окно отображается, показываем стартовые уведомления...")
+            QTimer.singleShot(300, self._run_startup_notifications)
 
     def init_ui(self):
         """Инициализация пользовательского интерфейса"""
@@ -772,7 +812,7 @@ class MainWindow(QMainWindow):
     def return_asset(self):
         """Возврат актива"""
         print("📥 Открытие диалога возврата актива...")
-        dialog = ReturnDialog(self)
+        dialog = ReturnDialog(self, self.current_user)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh_all_data()
 
