@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox, QButtonGroup)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -37,6 +37,14 @@ class MainWindow(QMainWindow):
             'employee_id': None,
             'full_name': 'Guest'
         }
+        
+        # Устанавливаем иконку окна (дублируем для надежности)
+        try:
+            logo_path = Path("InstrumentTracker_logo.png")
+            if logo_path.exists():
+                self.setWindowIcon(QIcon(str(logo_path)))
+        except Exception as e:
+            print(f"⚠️ Не удалось установить иконку окна: {e}")
         
         # Инициализация менеджера тем
         self.current_theme = ThemeManager.load_theme()
@@ -1892,6 +1900,14 @@ def main():
     print("🎯 Запуск приложения...")
     app = QApplication(sys.argv)
     
+    # Устанавливаем иконку приложения (для Dock/панели задач)
+    app_icon_path = Path("InstrumentTracker_icon.png")
+    if app_icon_path.exists():
+        app.setWindowIcon(QIcon(str(app_icon_path)))
+        print(f"✅ Установлена иконка приложения: {app_icon_path}")
+    else:
+        print(f"⚠️ Иконка приложения не найдена: {app_icon_path}")
+    
     while True:
         # Показываем окно входа
         login_dialog = LoginDialog()
@@ -1907,6 +1923,15 @@ def main():
         if login_dialog.exec() == QDialog.DialogCode.Accepted and current_user:
             # Создаем главное окно с текущим пользователем
             window = MainWindow(current_user)
+            
+            # Устанавливаем иконку окна (логотип)
+            logo_path = Path("InstrumentTracker_logo.png")
+            if logo_path.exists():
+                window.setWindowIcon(QIcon(str(logo_path)))
+                print(f"✅ Установлен логотип окна: {logo_path}")
+            else:
+                print(f"⚠️ Логотип окна не найден: {logo_path}")
+            
             window.show()
             print("✅ Приложение запущено успешно")
             app.exec()  # Ждем закрытия окна
