@@ -281,6 +281,19 @@ class NotificationManager:
     def show_notification(self, notif_type='info', title='', message='', persistent=False, variant='default'):
         """Показать всплывающее уведомление"""
         try:
+            # Если variant='default', определяем его на основе текущей темы
+            if variant == 'default':
+                # Получаем текущую тему из главного окна
+                if hasattr(self.main_window, 'current_theme'):
+                    theme = self.main_window.current_theme
+                    # Для тёмной темы используем dark, для светлой - light
+                    if theme == 'dark':
+                        variant = 'dark'
+                    else:
+                        variant = 'light'
+                else:
+                    variant = 'dark'  # По умолчанию тёмная
+            
             notification = NotificationWidget(
                 self.main_window,
                 notification_type=notif_type,
@@ -509,7 +522,7 @@ class NotificationManager:
                 if len(first_requests) > 1:
                     message += f'\n({len(first_requests)} запросов)'
                 
-                self.show_notification('info', title, message, persistent=True, variant='dark')
+                self.show_notification('info', title, message, persistent=True)
                 
                 # Если есть ещё сотрудники с запросами, показываем дополнительные уведомления
                 for idx, (employee_name, req_list) in enumerate(list(requests_by_employee.items())[1:], 1):
@@ -517,7 +530,7 @@ class NotificationManager:
                     QTimer.singleShot(500 * (idx + 1), lambda name=employee_name, req_items=req_list: 
                         self.show_notification('info', '📋 Новый запрос', 
                                              f'от {name}' + (f'\n({len(req_items)} запросов)' if len(req_items) > 1 else ''),
-                                             persistent=True, variant='dark'))
+                                             persistent=True))
             
         except Exception as e:
             print(f"❌ Ошибка при проверке новых запросов для админа: {e}")

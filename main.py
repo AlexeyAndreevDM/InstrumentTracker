@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
 
             greeting = f"Добро пожаловать, {full_name}!" if full_name else "Добро пожаловать!"
             print(f"📬 Показ приветственного уведомления: {greeting}")
-            self.notification_manager.show_notification('info', '', greeting, persistent=False, variant='dark')
+            self.notification_manager.show_notification('info', '', greeting, persistent=False)
 
             # Для обычных пользователей показываем просрочки и напоминания на завтра
             # Задержка 4.5 сек: приветствие автозакрывается через 4 сек, затем показываем уведомления
