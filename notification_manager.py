@@ -178,6 +178,79 @@ class NotificationWidget(QWidget):
         self.animation.finished.connect(self.hide)
         self.animation.start()
 
+    def update_theme(self, variant):
+        """Обновить тему уведомления"""
+        try:
+            self.variant = variant
+            
+            # Обновляем цвета в зависимости от темы
+            if self.variant == 'dark':
+                bg_color = "rgba(40, 40, 40, 230)"
+                text_color = "#ffffff"
+                border_color = "rgba(100, 100, 100, 150)"
+            else:
+                # Для светлой темы
+                bg_color = "rgba(255, 255, 255, 240)"
+                text_color = "#000000"
+                border_color = "rgba(200, 200, 200, 150)"
+            
+            # Применяем новый стиль к контейнеру
+            self.container.setStyleSheet(f"""
+                #notificationContainer {{
+                    background-color: {bg_color};
+                    border-radius: 10px;
+                    border: 1px solid {border_color};
+                    padding: 15px 15px 15px 15px;
+                }}
+            """)
+            
+            # Обновляем стиль текста у всех QLabel внутри контейнера
+            for i in range(self.container.layout().count()):
+                widget = self.container.layout().itemAt(i).widget()
+                if isinstance(widget, QLabel):
+                    current_style = widget.styleSheet()
+                    # Убираем старый цвет текста и добавляем новый
+                    import re
+                    # Удаляем старый color из стиля
+                    current_style = re.sub(r'color:\s*[^;]+;', '', current_style)
+                    # Добавляем новый цвет текста
+                    widget.setStyleSheet(current_style + f"color: {text_color}; margin: 0; padding: 0;")
+            
+            # Обновляем стиль кнопки закрытия, если она есть
+            if self.persistent and hasattr(self, 'close_btn'):
+                self.close_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        color: {text_color};
+                        font-weight: bold;
+                        font-size: 14px;
+                        border: none;
+                        padding: 0;
+                        margin: 0;
+                    }}
+                    QPushButton:hover {{
+                        color: #cccccc;
+                    }}
+                    QPushButton:pressed {{
+                        color: #aaaaaa;
+                    }}
+                """)
+            
+            # Обновляем отображение
+            self.update()
+            self.repaint()
+            
+        except Exception as e:
+            print(f"❌ Ошибка обновления темы виджета: {e}")
+
+    def reapply_theme(self):
+        """Полностью перерисовать уведомление с новой темой"""
+        # Этот метод можно использовать для полного пересоздания виджета
+        # Но для простоты будем использовать update_theme
+        self.update_theme(self.variant)
+
+    
+
 
 class NotificationManager:
     """Менеджер уведомлений и проверки сроков"""
@@ -303,6 +376,8 @@ class NotificationManager:
                 variant=variant
             )
 
+            # Сохраняем тему в объекте уведомления
+            notification.current_variant = variant
             notification.show_notification()
             self.notification_widgets.append(notification)
 
@@ -543,3 +618,29 @@ class NotificationManager:
                 widget.close()
             except:
                 pass
+
+    ##
+    def update_notifications_theme(self):
+        """Обновить тему всех открытых уведомлений"""
+        try:
+            # Определяем текущую тему из главного окна
+            if hasattr(self.main_window, 'current_theme'):
+                theme = self.main_window.current_theme
+                variant = 'dark' if theme == 'dark' else 'light'
+            else:
+                variant = 'dark'  # По умолчанию тёмная
+            
+            print(f"🎨 Обновление темы уведомлений на: {variant}")
+            
+            # Обновляем все открытые уведомления
+            for notification in self.notification_widgets[:]:  # Используем копию списка
+                try:
+                    if hasattr(notification, 'update_theme'):
+                        notification.update_theme(variant)
+                except Exception as e:
+                    print(f"❌ Ошибка обновления темы уведомления: {e}")
+                    # Если не удалось обновить, закрываем уведомление
+                    if notification in self.notification_widgets:
+                        self.notification_widgets.remove(notification)
+        except Exception as e:
+            print(f"❌ Ошибка в update_notifications_theme: {e}")

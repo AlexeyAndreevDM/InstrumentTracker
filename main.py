@@ -108,10 +108,15 @@ class MainWindow(QMainWindow):
         """Установить и сохранить тему"""
         self.apply_theme(theme_name)
         ThemeManager.save_theme(theme_name)
+        
         # Обновляем user_info_label с новым стилем
         theme = ThemeManager.get_theme(theme_name)
         if hasattr(self, 'user_info_label'):
             self.user_info_label.setStyleSheet(theme['user_info_style'])
+        
+        # Обновляем тему всех открытых уведомлений
+        if hasattr(self, 'notification_manager'):
+            self.notification_manager.update_notifications_theme()
 
 
     def init_ui(self):
