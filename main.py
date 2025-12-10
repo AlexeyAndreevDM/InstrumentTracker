@@ -20,6 +20,7 @@ from views.login_dialog import LoginDialog
 from views.request_dialog import RequestAssetDialog
 from database.db_manager import DatabaseManager
 from notification_manager import NotificationManager
+from theme_manager import ThemeManager
 
 
 class MainWindow(QMainWindow):
@@ -36,6 +37,10 @@ class MainWindow(QMainWindow):
             'employee_id': None,
             'full_name': 'Guest'
         }
+        
+        # Инициализация менеджера тем
+        self.current_theme = ThemeManager.load_theme()
+        self.apply_theme(self.current_theme)
         
         # Инициализация менеджера уведомлений
         self.notification_manager = NotificationManager(self)
@@ -73,8 +78,9 @@ class MainWindow(QMainWindow):
                     QTimer.singleShot(4500, lambda: self.notification_manager.check_user_notifications(employee_id))
             # Для админов показываем уведомление о всех просрочках
             elif self.current_user and self.current_user.get('role') == 'admin':
-                print("👨‍💼 Проверка просрочек для админа...")
+                print("👨‍💼 Проверка просрочек и запросов для админа...")
                 QTimer.singleShot(4500, lambda: self.notification_manager.check_admin_overdue())
+                QTimer.singleShot(5500, lambda: self.notification_manager.check_new_requests_for_admin())
         except Exception as e:
             print(f"❌ Ошибка при показе стартовых уведомлений: {e}")
             import traceback
@@ -87,6 +93,26 @@ class MainWindow(QMainWindow):
             self._startup_notifications_shown = True
             print("🪟 Окно отображается, показываем стартовые уведомления...")
             QTimer.singleShot(300, self._run_startup_notifications)
+
+    def apply_theme(self, theme_name):
+        """Применить тему к приложению"""
+        try:
+            theme = ThemeManager.get_theme(theme_name)
+            self.setStyleSheet(theme['app_stylesheet'])
+            self.current_theme = theme_name
+            print(f"✅ Применена тема: {theme_name}")
+        except Exception as e:
+            print(f"❌ Ошибка при применении темы: {e}")
+    
+    def set_theme(self, theme_name):
+        """Установить и сохранить тему"""
+        self.apply_theme(theme_name)
+        ThemeManager.save_theme(theme_name)
+        # Обновляем user_info_label с новым стилем
+        theme = ThemeManager.get_theme(theme_name)
+        if hasattr(self, 'user_info_label'):
+            self.user_info_label.setStyleSheet(theme['user_info_style'])
+
 
     def init_ui(self):
         """Инициализация пользовательского интерфейса"""
@@ -104,9 +130,10 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
         
         # Информация о пользователе
-        user_info_label = QLabel(f"👤 Вы вошли как: {self.current_user.get('full_name', 'Unknown')} ({self.current_user.get('role', 'user').upper()})")
-        user_info_label.setStyleSheet("padding: 10px; background-color: #e3f2fd; color: #1976d2; font-weight: bold; border-radius: 5px;")
-        layout.addWidget(user_info_label)
+        self.user_info_label = QLabel(f"👤 Вы вошли как: {self.current_user.get('full_name', 'Unknown')} ({self.current_user.get('role', 'user').upper()})")
+        theme = ThemeManager.get_theme(self.current_theme)
+        self.user_info_label.setStyleSheet(theme['user_info_style'])
+        layout.addWidget(self.user_info_label)
 
         # Создаем вкладки
         self.tabs = QTabWidget()
@@ -174,6 +201,19 @@ class MainWindow(QMainWindow):
         exit_action = QAction("🚪 Выход", self)
         exit_action.triggered.connect(self.logout)
         file_menu.addAction(exit_action)
+
+        # Меню Вид
+        view_menu = menubar.addMenu("👁️ Вид")
+        
+        # Тёмная тема
+        dark_theme_action = QAction("🌙 Тёмная тема", self)
+        dark_theme_action.triggered.connect(lambda: self.set_theme('dark'))
+        view_menu.addAction(dark_theme_action)
+        
+        # Светлая тема
+        light_theme_action = QAction("☀️ Светлая тема", self)
+        light_theme_action.triggered.connect(lambda: self.set_theme('light'))
+        view_menu.addAction(light_theme_action)
 
         # Меню Справка
         help_menu = menubar.addMenu("❓ Справка")

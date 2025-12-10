@@ -465,6 +465,63 @@ class NotificationManager:
         except Exception as e:
             print(f"❌ Ошибка при проверке просрочек для админа: {e}")
     
+    def check_new_requests_for_admin(self):
+        """Проверить новые запросы на выдачу активов и показать уведомление админу"""
+        try:
+            # Получаем ВСЕ ожидающие одобрения запросы (со статусом 'pending')
+            query = """
+                SELECT 
+                    ar.request_id,
+                    e.last_name || ' ' || e.first_name || COALESCE(' ' || e.patronymic, '') as employee_full_name,
+                    a.name,
+                    ar.request_date
+                FROM Asset_Requests ar
+                JOIN Assets a ON ar.asset_id = a.asset_id
+                JOIN Employees e ON ar.employee_id = e.employee_id
+                WHERE ar.status = 'pending'
+                ORDER BY ar.request_date ASC
+            """
+            
+            pending_requests = self.db.execute_query(query)
+            
+            if pending_requests:
+                # Собираем запросы по сотрудникам
+                requests_by_employee = {}
+                for row in pending_requests:
+                    request_id, employee_name, asset_name, request_date = row
+                    
+                    if employee_name not in requests_by_employee:
+                        requests_by_employee[employee_name] = []
+                    requests_by_employee[employee_name].append({
+                        'asset': asset_name,
+                        'request_id': request_id
+                    })
+                
+                # Показываем первое уведомление с первым сотрудником
+                first_employee = list(requests_by_employee.keys())[0]
+                first_requests = requests_by_employee[first_employee]
+                
+                # Формируем сообщение
+                title = '📋 Новый запрос'
+                message = f'от {first_employee}'
+                
+                # Если есть несколько запросов от одного сотрудника, добавляем количество
+                if len(first_requests) > 1:
+                    message += f'\n({len(first_requests)} запросов)'
+                
+                self.show_notification('info', title, message, persistent=True, variant='dark')
+                
+                # Если есть ещё сотрудники с запросами, показываем дополнительные уведомления
+                for idx, (employee_name, req_list) in enumerate(list(requests_by_employee.items())[1:], 1):
+                    # Небольшая задержка между уведомлениями
+                    QTimer.singleShot(500 * (idx + 1), lambda name=employee_name, req_items=req_list: 
+                        self.show_notification('info', '📋 Новый запрос', 
+                                             f'от {name}' + (f'\n({len(req_items)} запросов)' if len(req_items) > 1 else ''),
+                                             persistent=True, variant='dark'))
+            
+        except Exception as e:
+            print(f"❌ Ошибка при проверке новых запросов для админа: {e}")
+    
     def cleanup(self):
         """Очистка при закрытии приложения"""
         self.stop_checking()

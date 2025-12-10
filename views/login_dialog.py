@@ -108,14 +108,16 @@ class LoginDialog(QDialog):
         layout.setContentsMargins(30, 20, 30, 20)
         
         # ФИО из списка сотрудников
-        employee_label = QLabel("👥 Выберите сотрудника:")
+        employee_label = QLabel("👥 Выберите сотрудника или введите ФИО:")
         employee_label.setStyleSheet("font-size: 12px;")
         layout.addWidget(employee_label)
         
         self.register_employee_combo = QComboBox()
         self.register_employee_combo.setEditable(True)
         self.register_employee_combo.setFixedHeight(30)
+        self.register_employee_combo.setPlaceholderText("--Выберите сотрудника или введите ФИО--")
         self.register_employee_combo.currentIndexChanged.connect(self.on_employee_selected)
+        self.register_employee_combo.editTextChanged.connect(self.on_employee_text_changed)
         
         # Загружаем сотрудников
         self.load_employees_to_combo()
@@ -193,7 +195,7 @@ class LoginDialog(QDialog):
             print(f"Ошибка загрузки сотрудников: {e}")
     
     def on_employee_selected(self, index):
-        """Обработчик выбора сотрудника"""
+        """Обработчик выбора сотрудника из списка"""
         # Проверяем, инициализированы ли поля
         if self.register_username_input is None or self.register_password_input is None:
             return
@@ -205,6 +207,24 @@ class LoginDialog(QDialog):
         
         if employee_id:
             # Получаем следующий номер пользователя
+            next_user_num = self._get_next_user_number()
+            username = f"user{next_user_num}"
+            
+            self.register_username_input.setText(username)
+            self.register_password_input.setText(username)
+        else:
+            self.register_username_input.clear()
+            self.register_password_input.clear()
+    
+    def on_employee_text_changed(self, text):
+        """Обработчик изменения текста в editable combobox"""
+        # Проверяем, инициализированы ли поля
+        if self.register_username_input is None or self.register_password_input is None:
+            return
+        
+        text = text.strip()
+        if text and text != "--Выберите сотрудника или введите ФИО--":
+            # Есть текст - генерируем username
             next_user_num = self._get_next_user_number()
             username = f"user{next_user_num}"
             
@@ -250,16 +270,31 @@ class LoginDialog(QDialog):
     def on_register_click(self):
         """Обработчик регистрации нового пользователя"""
         employee_id = self.register_employee_combo.currentData()
+        employee_text = self.register_employee_combo.currentText().strip()
         username = self.register_username_input.text().strip()
         password = self.register_password_input.text()
         
-        if not employee_id:
-            QMessageBox.warning(self, "Ошибка", "Выберите сотрудника!")
+        # Если нет выбранного employee_id, но есть текст - это новый сотрудник
+        if not employee_id and not employee_text:
+            QMessageBox.warning(self, "Ошибка", "Выберите сотрудника или введите ФИО!")
             return
         
-        if not username or not password:
-            QMessageBox.warning(self, "Ошибка", "Имя пользователя и пароль не могут быть пустыми!")
-            return
+        # Если employee_id не выбран, но есть текст - создаём нового сотрудника
+        if not employee_id and employee_text:
+            try:
+                # Разбираем ФИО: может быть "Иванов Иван", "Иванов Иван Иванович", или просто "Иван Иванович"
+                parts = employee_text.split()
+                last_name = parts[0] if len(parts) > 0 else ""
+                first_name = parts[1] if len(parts) > 1 else ""
+                patronymic = parts[2] if len(parts) > 2 else None
+                
+                # Вставляем нового сотрудника
+                query = "INSERT INTO Employees (last_name, first_name, patronymic) VALUES (?, ?, ?)"
+                employee_id = self.db.execute_update(query, (last_name, first_name, patronymic))
+                print(f"✅ Создан новый сотрудник: {employee_text} (ID: {employee_id})")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Ошибка при создании сотрудника:\n{str(e)}")
+                return
         
         # Проверяем, существует ли уже аккаунт для этого сотрудника
         query = "SELECT user_id FROM Users WHERE employee_id = ?"
@@ -267,7 +302,11 @@ class LoginDialog(QDialog):
         
         if existing:
             emp_name = self.register_employee_combo.currentText()
-            QMessageBox.warning(self, "Ошибка", f"Для сотрудника '{emp_name}' уже создан аккаунт!\\n\\nОдин сотрудник - один аккаунт.")
+            QMessageBox.warning(self, "Ошибка", f"Для сотрудника '{emp_name}' уже создан аккаунт!\n\nОдин сотрудник - один аккаунт.")
+            return
+        
+        if not username or not password:
+            QMessageBox.warning(self, "Ошибка", "Имя пользователя и пароль не могут быть пустыми!")
             return
         
         # Проверяем, существует ли уже такой username (на случай, если кто-то вручную меняет)
