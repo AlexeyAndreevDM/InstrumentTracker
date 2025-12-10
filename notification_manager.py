@@ -112,8 +112,8 @@ class NotificationWidget(QWidget):
             """)
             self.close_btn.clicked.connect(self.fade_out)
         
-        # Размер фиксированный
-        self.setFixedSize(300, 72)
+        # Размер фиксированный - увеличен на 25% для лучшего отображения многострочного текста
+        self.setFixedSize(300, 90)
         
     def resizeEvent(self, event):
         """Позиционируем крестик в левом верхнем углу"""
@@ -156,6 +156,7 @@ class NotificationWidget(QWidget):
         self.animation.setEndValue(QPoint(x, y))
         
         self.show()
+        self.raise_()  # Поднимаем на передний план
         self.animation.start()
 
         # Запуск таймера на автозакрытие (если не persistent)

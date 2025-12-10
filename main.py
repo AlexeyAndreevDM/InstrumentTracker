@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
     def _run_startup_notifications(self):
         """Показать приветственное уведомление и проверить уведомления пользователя."""
         try:
-            # Приветственное сообщение при каждом запуске (persistent, dark style)
+            # Приветственное сообщение при каждом запуске (автозакрывается)
             full_name = self.current_user.get('full_name') if self.current_user else None
             if not full_name and self.current_user and self.current_user.get('employee_id'):
                 # Попробуем получить ФИО из БД
@@ -65,11 +65,12 @@ class MainWindow(QMainWindow):
             self.notification_manager.show_notification('info', '', greeting, persistent=False, variant='dark')
 
             # Для обычных пользователей показываем просрочки и напоминания на завтра
+            # Задержка 1.5 сек чтобы приветствие было видно первым
             if self.current_user and self.current_user.get('role') != 'admin':
                 employee_id = self.current_user.get('employee_id')
                 if employee_id:
                     print(f"🔔 Проверка уведомлений для сотрудника {employee_id}...")
-                    self.notification_manager.check_user_notifications(employee_id)
+                    QTimer.singleShot(1500, lambda: self.notification_manager.check_user_notifications(employee_id))
         except Exception as e:
             print(f"❌ Ошибка при показе стартовых уведомлений: {e}")
             import traceback
