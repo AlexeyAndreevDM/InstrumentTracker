@@ -1,0 +1,14 @@
+# ========== ДАННЫЕ И НАСТРОЙКИ ==========
+
+# Файлы базы данных
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+inventory.db
+
+# Файлы аудита и логов
+audit_log.json
+*.log
+*.json

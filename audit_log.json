@@ -68,5 +68,48 @@
         }
       }
     }
+  },
+  {
+    "timestamp": "2025-12-11T11:12:07.493315",
+    "user_id": 1,
+    "username": "user1",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:12:59.728475",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:13:39.736464",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:14:01.682064",
+    "user_id": 0,
+    "username": "admin",
+    "action": "asset_edited",
+    "details": {
+      "asset_id": 4,
+      "asset_name": "Молоток",
+      "changes": {
+        "location": {
+          "old": "Склад №1",
+          "new": "Рабочий стол"
+        }
+      }
+    }
   }
 ]
