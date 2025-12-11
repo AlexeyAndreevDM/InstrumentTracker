@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         
         # Устанавливаем иконку окна (дублируем для надежности)
         try:
-            logo_path = Path("InstrumentTracker_logo.png")
+            logo_path = Path("pictures/InstrumentTracker_logo.png")
             if logo_path.exists():
                 self.setWindowIcon(QIcon(str(logo_path)))
         except Exception as e:
@@ -1901,7 +1901,7 @@ def main():
     app = QApplication(sys.argv)
     
     # Устанавливаем иконку приложения (для Dock/панели задач)
-    app_icon_path = Path("InstrumentTracker_icon.png")
+    app_icon_path = Path("pictures/InstrumentTracker_icon.png")
     if app_icon_path.exists():
         app.setWindowIcon(QIcon(str(app_icon_path)))
         print(f"✅ Установлена иконка приложения: {app_icon_path}")
@@ -1925,7 +1925,7 @@ def main():
             window = MainWindow(current_user)
             
             # Устанавливаем иконку окна (логотип)
-            logo_path = Path("InstrumentTracker_logo.png")
+            logo_path = Path("pictures/InstrumentTracker_logo.png")
             if logo_path.exists():
                 window.setWindowIcon(QIcon(str(logo_path)))
                 print(f"✅ Установлен логотип окна: {logo_path}")
