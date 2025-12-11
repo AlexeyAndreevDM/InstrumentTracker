@@ -1,0 +1,72 @@
+[
+  {
+    "timestamp": "2025-12-11T10:27:19.360779",
+    "user_id": 1,
+    "username": "user1",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T10:32:53.668773",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T10:36:07.817348",
+    "user_id": 1,
+    "username": "user1",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T10:36:14.159029",
+    "user_id": 1,
+    "username": "user1",
+    "action": "asset_returned",
+    "details": {
+      "asset_id": 1,
+      "asset_name": "Шуруповерт Bosch (GSR 120-LI)",
+      "employee_id": 1,
+      "employee_name": "Иванов Иван Иванович",
+      "quantity": 1,
+      "return_date": "2025-12-11"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T10:36:29.249821",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T10:36:46.709395",
+    "user_id": 0,
+    "username": "admin",
+    "action": "asset_edited",
+    "details": {
+      "asset_id": 4,
+      "asset_name": "Молоток",
+      "changes": {
+        "location": {
+          "old": "Склад №1",
+          "new": "Кабинет 101"
+        },
+        "quantity": {
+          "old": 2,
+          "new": 3
+        }
+      }
+    }
+  }
+]

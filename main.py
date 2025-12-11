@@ -22,6 +22,8 @@ from database.db_manager import DatabaseManager
 from notification_manager import NotificationManager
 from theme_manager import ThemeManager
 
+from audit_logger import AuditLogger
+
 
 class MainWindow(QMainWindow):
     def __init__(self, current_user=None):
@@ -1916,6 +1918,13 @@ def main():
         def on_login_success(user_data):
             nonlocal current_user
             current_user = user_data
+            # Логируем вход
+            AuditLogger.log_action(
+                user_data.get('user_id'),
+                user_data.get('username'),
+                'user_login',
+                {'role': user_data.get('role')}
+            )
             login_dialog.accept()
         
         login_dialog.login_successful.connect(on_login_success)

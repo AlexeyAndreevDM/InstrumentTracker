@@ -2,6 +2,17 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QComboBox, QDateEdit, QPushButton, QMessageBox, QTextEdit)
 from PyQt6.QtCore import QDate, QDateTime
 from database.db_manager import DatabaseManager
+import sys
+import os
+
+# Добавляем импорт для аудит-логгера
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from audit_logger import AuditLogger
+    AUDIT_ENABLED = True
+except ImportError:
+    AUDIT_ENABLED = False
+    print("⚠️ AuditLogger не найден, логирование отключено")
 
 
 class ReturnDialog(QDialog):
@@ -254,6 +265,22 @@ class ReturnDialog(QDialog):
                 (asset_id, employee_id, operation_type, operation_date, notes)
                 VALUES (?, ?, 'возврат', ?, ?)
             ''', (asset_id, employee_id, current_datetime, return_notes))
+
+            # Логирование возврата актива
+            if AUDIT_ENABLED and self.current_user:
+                AuditLogger.log_action(
+                    self.current_user.get('user_id'),
+                    self.current_user.get('username'),
+                    'asset_returned',
+                    {
+                        'asset_id': asset_id,
+                        'asset_name': asset_name,
+                        'employee_id': employee_id,
+                        'employee_name': employee_name,
+                        'quantity': quantity_issued,
+                        'return_date': return_date
+                    }
+                )
 
             QMessageBox.information(self, "Успех", f"Актив успешно возвращен!\nКол-во: {quantity_issued} шт.\nОсталось на складе: {new_quantity} шт.")
             self.accept()

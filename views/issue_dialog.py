@@ -2,6 +2,17 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QComboBox, QDateEdit, QPushButton, QMessageBox, QSpinBox, QLabel)
 from PyQt6.QtCore import QDate, QDateTime, QTime
 from database.db_manager import DatabaseManager
+import sys
+import os
+
+# Добавляем импорт для аудит-логгера
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from audit_logger import AuditLogger
+    AUDIT_ENABLED = True
+except ImportError:
+    AUDIT_ENABLED = False
+    print("⚠️ AuditLogger не найден, логирование отключено")
 
 
 class IssueDialog(QDialog):
@@ -193,6 +204,22 @@ class IssueDialog(QDialog):
                 (asset_id, employee_id, operation_type, operation_date, planned_return_date, notes) 
                 VALUES (?, ?, 'выдача', ?, ?, ?)
             ''', (asset_id, employee_id, current_datetime, planned_return, notes))
+
+            # Логирование выдачи актива
+            if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):
+                AuditLogger.log_action(
+                    self.parent().current_user.get('user_id'),
+                    self.parent().current_user.get('username'),
+                    'asset_issued',
+                    {
+                        'asset_id': asset_id,
+                        'asset_name': asset_name,
+                        'employee_id': employee_id,
+                        'employee_name': employee_name,
+                        'quantity': quantity_issued,
+                        'planned_return': planned_return
+                    }
+                )
 
             QMessageBox.information(self, "Успех", f"Актив успешно выдан сотруднику!\nВыдано: {quantity_issued} шт.\nОсталось: {new_quantity} шт.")
             self.accept()

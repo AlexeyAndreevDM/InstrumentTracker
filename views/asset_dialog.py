@@ -3,6 +3,17 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QMessageBox)
 from PyQt6.QtCore import Qt
 from database.db_manager import DatabaseManager
+import sys
+import os
+
+# Добавляем импорт для аудит-логгера
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from audit_logger import AuditLogger
+    AUDIT_ENABLED = True
+except ImportError:
+    AUDIT_ENABLED = False
+    print("⚠️ AuditLogger не найден, логирование отключено")
 
 
 class AssetDialog(QDialog):
@@ -121,6 +132,15 @@ class AssetDialog(QDialog):
             self.location_combo.addItem(new_location_name, location_id)
             self.location_combo.setCurrentText(new_location_name)
 
+            # Логирование добавления местоположения
+            if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):
+                AuditLogger.log_action(
+                    self.parent().current_user.get('user_id'),
+                    self.parent().current_user.get('username'),
+                    'location_added',
+                    {'location_name': new_location_name}
+                )
+
             QMessageBox.information(self, "Успех", f"Местоположение '{new_location_name}' успешно добавлено!")
 
         except Exception as e:
@@ -170,7 +190,7 @@ class AssetDialog(QDialog):
                     )
 
             # Вставляем новый актив
-            self.db.execute_update('''
+            asset_id = self.db.execute_update('''
                 INSERT INTO Assets (name, type_id, model, serial_number, current_status, location_id, quantity)
                 VALUES (?, ?, ?, ?, 'Доступен', ?, ?)
             ''', (
@@ -181,6 +201,21 @@ class AssetDialog(QDialog):
                 location_id,
                 self.quantity_spin.value()
             ))
+
+            # Логирование добавления актива
+            if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):
+                AuditLogger.log_action(
+                    self.parent().current_user.get('user_id'),
+                    self.parent().current_user.get('username'),
+                    'asset_added',
+                    {
+                        'asset_id': asset_id,
+                        'name': self.name_input.text().strip(),
+                        'type': self.type_combo.currentText(),
+                        'model': self.model_input.text().strip(),
+                        'quantity': self.quantity_spin.value()
+                    }
+                )
 
             QMessageBox.information(self, "Успех", "Актив успешно добавлен!")
             self.accept()

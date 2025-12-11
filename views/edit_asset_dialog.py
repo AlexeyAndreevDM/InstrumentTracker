@@ -3,6 +3,17 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QMessageBox, QCheckBox, QGroupBox, QTextEdit)
 from PyQt6.QtCore import Qt, QDate
 from database.db_manager import DatabaseManager
+import sys
+import os
+
+# Добавляем импорт для аудит-логгера
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from audit_logger import AuditLogger
+    AUDIT_ENABLED = True
+except ImportError:
+    AUDIT_ENABLED = False
+    print("⚠️ AuditLogger не найден, логирование отключено")
 
 
 class EditAssetDialog(QDialog):
@@ -309,6 +320,15 @@ class EditAssetDialog(QDialog):
             self.location_combo.addItem(new_location_name, location_id)
             self.location_combo.setCurrentText(new_location_name)
 
+            # Логирование добавления местоположения
+            if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):
+                AuditLogger.log_action(
+                    self.parent().current_user.get('user_id'),
+                    self.parent().current_user.get('username'),
+                    'location_added',
+                    {'location_name': new_location_name}
+                )
+
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка добавления местоположения: {e}")
 
@@ -355,6 +375,25 @@ class EditAssetDialog(QDialog):
                     (new_location_name,)
                 )
 
+            # Получаем старые данные для логирования изменений
+            old_data = self.db.execute_query(
+                "SELECT name, type_id, model, serial_number, location_id, quantity, current_status FROM Assets WHERE asset_id = ?",
+                (self.asset_id,)
+            )
+            
+            old_name, old_type_id, old_model, old_serial, old_location_id, old_quantity, old_status = old_data[0]
+            
+            # Получаем названия типов и местоположений для логирования
+            old_type_name = self.db.execute_query(
+                "SELECT type_name FROM Asset_Types WHERE type_id = ?",
+                (old_type_id,)
+            )[0][0] if old_type_id else "Неизвестно"
+            
+            old_location_name = self.db.execute_query(
+                "SELECT location_name FROM Locations WHERE location_id = ?",
+                (old_location_id,)
+            )[0][0] if old_location_id else "Неизвестно"
+
             # Обновляем данные актива
             self.db.execute_update('''
                 UPDATE Assets 
@@ -377,6 +416,9 @@ class EditAssetDialog(QDialog):
                 employee_id = self.employee_combo.currentData()
                 issue_date = self.issue_date_edit.date().toString('yyyy-MM-dd')
                 planned_return_date = self.planned_return_edit.date().toString('yyyy-MM-dd')
+
+                # Получаем имя сотрудника для логирования
+                employee_name = self.employee_combo.currentText().split(' (')[0]
 
                 # Проверяем, есть ли уже открытая выдача
                 existing_issue = self.db.execute_query('''
@@ -432,6 +474,41 @@ class EditAssetDialog(QDialog):
                     VALUES (?, ?, 'списание', datetime('now'), ?)
                 ''', (self.asset_id, employee_id, writeoff_notes))
 
+            # Логирование редактирования актива
+            if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):
+                # Собираем изменения
+                changes = {}
+                if self.name_input.text().strip() != old_name:
+                    changes['name'] = {'old': old_name, 'new': self.name_input.text().strip()}
+                if self.type_combo.currentData() != old_type_id:
+                    changes['type'] = {'old': old_type_name, 'new': self.type_combo.currentText()}
+                if self.model_input.text().strip() != old_model:
+                    changes['model'] = {'old': old_model, 'new': self.model_input.text().strip()}
+                if self.serial_input.text().strip() != (old_serial or ""):
+                    changes['serial'] = {'old': old_serial or "", 'new': self.serial_input.text().strip()}
+                if location_id != old_location_id:
+                    new_location_name = self.db.execute_query(
+                        "SELECT location_name FROM Locations WHERE location_id = ?",
+                        (location_id,)
+                    )[0][0] if location_id else "Неизвестно"
+                    changes['location'] = {'old': old_location_name, 'new': new_location_name}
+                if self.quantity_spin.value() != old_quantity:
+                    changes['quantity'] = {'old': old_quantity, 'new': self.quantity_spin.value()}
+                if self.status_combo.currentText() != old_status:
+                    changes['status'] = {'old': old_status, 'new': self.status_combo.currentText()}
+                
+                if changes:  # Логируем только если были изменения
+                    AuditLogger.log_action(
+                        self.parent().current_user.get('user_id'),
+                        self.parent().current_user.get('username'),
+                        'asset_edited',
+                        {
+                            'asset_id': self.asset_id,
+                            'asset_name': self.name_input.text().strip(),
+                            'changes': changes
+                        }
+                    )
+
             QMessageBox.information(self, "Успех", "Данные актива успешно обновлены!")
             self.accept()
 
@@ -451,6 +528,18 @@ class EditAssetDialog(QDialog):
             return
 
         try:
+            # Получаем информацию об активе для логирования
+            asset_info = self.db.execute_query(
+                "SELECT name, model, quantity FROM Assets WHERE asset_id = ?",
+                (self.asset_id,)
+            )
+            
+            if not asset_info:
+                QMessageBox.warning(self, "Ошибка", "Актив не найден!")
+                return
+                
+            asset_name, asset_model, asset_quantity = asset_info[0]
+
             # Проверяем, не выдан ли актив
             asset_status = self.db.execute_query(
                 "SELECT current_status FROM Assets WHERE asset_id = ?",
@@ -470,6 +559,20 @@ class EditAssetDialog(QDialog):
 
             # Также удаляем связанные записи в истории
             self.db.execute_update("DELETE FROM Usage_History WHERE asset_id = ?", (self.asset_id,))
+
+            # Логирование удаления актива
+            if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):
+                AuditLogger.log_action(
+                    self.parent().current_user.get('user_id'),
+                    self.parent().current_user.get('username'),
+                    'asset_deleted',
+                    {
+                        'asset_id': self.asset_id,
+                        'asset_name': asset_name,
+                        'model': asset_model,
+                        'quantity': asset_quantity
+                    }
+                )
 
             QMessageBox.information(self, "Успех", "Актив успешно удален!")
             self.accept()
