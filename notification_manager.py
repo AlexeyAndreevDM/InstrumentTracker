@@ -356,16 +356,11 @@ class NotificationManager:
         try:
             # Если variant='default', определяем его на основе текущей темы
             if variant == 'default':
-                # Получаем текущую тему из главного окна
                 if hasattr(self.main_window, 'current_theme'):
                     theme = self.main_window.current_theme
-                    # Для тёмной темы используем dark, для светлой - light
-                    if theme == 'dark':
-                        variant = 'dark'
-                    else:
-                        variant = 'light'
+                    variant = 'dark' if theme == 'dark' else 'light'
                 else:
-                    variant = 'dark'  # По умолчанию тёмная
+                    variant = 'dark'
             
             notification = NotificationWidget(
                 self.main_window,
@@ -376,17 +371,29 @@ class NotificationManager:
                 variant=variant
             )
 
-            # Сохраняем тему в объекте уведомления
-            notification.current_variant = variant
             notification.show_notification()
+            
+            # Убедимся, что список существует
+            if not hasattr(self, 'notification_widgets'):
+                self.notification_widgets = []
+            
             self.notification_widgets.append(notification)
 
-            # Удаляем из списка после закрытия
+            # Безопасное удаление из списка при закрытии
             def on_close():
-                if notification in self.notification_widgets:
-                    self.notification_widgets.remove(notification)
+                try:
+                    # Двойная проверка для безопасности
+                    if hasattr(self, 'notification_widgets') and notification in self.notification_widgets:
+                        self.notification_widgets.remove(notification)
+                except (AttributeError, RuntimeError):
+                    # Игнорируем ошибки, если объект уже удален
+                    pass
+                except Exception as e:
+                    # Логируем другие ошибки, но не падаем
+                    print(f"⚠️ Ошибка в on_close: {e}")
 
-            notification.destroyed.connect(on_close)
+            # Используем прямое соединение, чтобы избежать проблем с очередями
+            notification.destroyed.connect(on_close, Qt.ConnectionType.DirectConnection)
 
             print(f"📬 Уведомление: {title} - {message} (persistent={persistent}, variant={variant})")
 
@@ -394,31 +401,31 @@ class NotificationManager:
             print(f"❌ Ошибка при показе уведомления: {e}")
             import traceback
             traceback.print_exc()
-    
-    def get_overdue_assets(self):
-        """Получить список просроченных активов"""
-        try:
-            query = """
-                SELECT 
-                    a.asset_id,
-                    a.name,
-                    e.last_name || ' ' || e.first_name as employee_name,
-                    uh.planned_return_date,
-                    CAST((DATE('now') - DATE(uh.planned_return_date)) AS INTEGER) as days_overdue
-                FROM Usage_History uh
-                JOIN Assets a ON uh.asset_id = a.asset_id
-                JOIN Employees e ON uh.employee_id = e.employee_id
-                WHERE uh.operation_type = 'выдача'
-                    AND uh.actual_return_date IS NULL
-                    AND DATE(uh.planned_return_date) < DATE('now')
-                ORDER BY uh.planned_return_date ASC
-            """
-            
-            return self.db.execute_query(query)
-            
-        except Exception as e:
-            print(f"❌ Ошибка при получении просроченных активов: {e}")
-            return []
+        
+        def get_overdue_assets(self):
+            """Получить список просроченных активов"""
+            try:
+                query = """
+                    SELECT 
+                        a.asset_id,
+                        a.name,
+                        e.last_name || ' ' || e.first_name as employee_name,
+                        uh.planned_return_date,
+                        CAST((DATE('now') - DATE(uh.planned_return_date)) AS INTEGER) as days_overdue
+                    FROM Usage_History uh
+                    JOIN Assets a ON uh.asset_id = a.asset_id
+                    JOIN Employees e ON uh.employee_id = e.employee_id
+                    WHERE uh.operation_type = 'выдача'
+                        AND uh.actual_return_date IS NULL
+                        AND DATE(uh.planned_return_date) < DATE('now')
+                    ORDER BY uh.planned_return_date ASC
+                """
+                
+                return self.db.execute_query(query)
+                
+            except Exception as e:
+                print(f"❌ Ошибка при получении просроченных активов: {e}")
+                return []
     
     def check_user_notifications(self, employee_id):
         """Проверить уведомления для конкретного пользователя при входе"""

@@ -111,5 +111,68 @@
         }
       }
     }
+  },
+  {
+    "timestamp": "2025-12-11T11:22:49.958884",
+    "user_id": 2,
+    "username": "user2",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:28:09.177997",
+    "user_id": 6,
+    "username": "user6",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:28:49.591395",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:46:14.621857",
+    "user_id": 1,
+    "username": "user1",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:46:22.189323",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:46:37.046604",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-11T11:47:52.528704",
+    "user_id": 2,
+    "username": "user2",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
   }
 ]
