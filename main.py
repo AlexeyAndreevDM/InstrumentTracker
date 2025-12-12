@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
             if logo_path.exists():
                 self.setWindowIcon(QIcon(str(logo_path)))
         except Exception as e:
-            print(f"⚠️ Не удалось установить иконку окна: {e}")
+            print(f"️ Не удалось установить иконку окна: {e}")
         
         # Инициализация менеджера тем
         self.current_theme = ThemeManager.load_theme()
@@ -92,7 +92,7 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(4500, lambda: self.notification_manager.check_admin_overdue())
                 QTimer.singleShot(5500, lambda: self.notification_manager.check_new_requests_for_admin())
         except Exception as e:
-            print(f"❌ Ошибка при показе стартовых уведомлений: {e}")
+            print(f" Ошибка при показе стартовых уведомлений: {e}")
             import traceback
             traceback.print_exc()
 
@@ -110,9 +110,9 @@ class MainWindow(QMainWindow):
             theme = ThemeManager.get_theme(theme_name)
             self.setStyleSheet(theme['app_stylesheet'])
             self.current_theme = theme_name
-            print(f"✅ Применена тема: {theme_name}")
+            print(f" Применена тема: {theme_name}")
         except Exception as e:
-            print(f"❌ Ошибка при применении темы: {e}")
+            print(f" Ошибка при применении темы: {e}")
     
     def set_theme(self, theme_name):
         """Установить и сохранить тему"""
@@ -194,7 +194,7 @@ class MainWindow(QMainWindow):
         if self.current_user.get('role') == 'admin':
             self.load_accounts_data()
 
-        print("✅ Интерфейс инициализирован")
+        print(" Интерфейс инициализирован")
 
     def create_menu(self):
         """Создание меню приложения"""
@@ -395,10 +395,10 @@ class MainWindow(QMainWindow):
             # Загружаем последние операции
             self.load_recent_operations()
 
-            print("✅ Панель управления обновлена")
+            print(" Панель управления обновлена")
 
         except Exception as e:
-            print(f"❌ Ошибка обновления панели управления: {e}")
+            print(f" Ошибка обновления панели управления: {e}")
 
     def load_recent_operations(self):
         """Загрузка последних операций для дашборда"""
@@ -613,7 +613,7 @@ class MainWindow(QMainWindow):
         if not self.db_connection.isOpen():
             if not self.db_connection.open():
                 error = self.db_connection.lastError().text()
-                print(f"❌ Ошибка подключения к базе: {error}")
+                print(f" Ошибка подключения к базе: {error}")
                 QMessageBox.critical(self, "Ошибка", f"Не удалось подключиться к базе данных!\n{error}")
                 return
 
@@ -639,14 +639,14 @@ class MainWindow(QMainWindow):
 
         if model.lastError().isValid():
             error = model.lastError().text()
-            print(f"❌ Ошибка выполнения запроса: {error}")
+            print(f" Ошибка выполнения запроса: {error}")
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки данных:\n{error}")
         else:
             row_count = model.rowCount()
-            print(f"✅ Данные загружены. Найдено записей: {row_count}")
+            print(f" Данные загружены. Найдено записей: {row_count}")
 
             if row_count == 0:
-                print("⚠️ В базе данных нет записей.")
+                print("️ В базе данных нет записей.")
 
         # Устанавливаем модель только если таблица существует (для админов)
         if hasattr(self, 'assets_table'):
@@ -733,10 +733,10 @@ class MainWindow(QMainWindow):
 
         if not query_obj.exec():
             error = query_obj.lastError().text()
-            print(f"❌ Ошибка загрузки истории: {error}")
+            print(f" Ошибка загрузки истории: {error}")
         else:
             model.setQuery(query_obj)
-            print(f"✅ История загружена. Записей: {model.rowCount()}")
+            print(f" История загружена. Записей: {model.rowCount()}")
 
         self.history_table.setModel(model)
         self.history_table.resizeColumnsToContents()
@@ -766,7 +766,7 @@ class MainWindow(QMainWindow):
                 )
                 
         except Exception as e:
-            print(f"⚠️ Предупреждение при обновлении примечаний: {e}")
+            print(f"️ Предупреждение при обновлении примечаний: {e}")
 
 
     def load_history_filters_data(self):
@@ -825,7 +825,7 @@ class MainWindow(QMainWindow):
         print(f"📝 Редактирование актива ID: {asset_id}")
         dialog = EditAssetDialog(asset_id, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            print("✅ Актив успешно отредактирован")
+            print(" Актив успешно отредактирован")
             self._refresh_all_data()
 
     def delete_asset(self):
@@ -859,7 +859,7 @@ class MainWindow(QMainWindow):
     def on_asset_dialog_finished(self, result, asset_id):
         """Обработчик завершения работы диалога редактирования/удаления"""
         if result == QDialog.DialogCode.Accepted:
-            print("✅ Операция с активом завершена, обновляем таблицы...")
+            print(" Операция с активом завершена, обновляем таблицы...")
             self._refresh_all_data()
 
     def issue_asset(self):
@@ -1554,7 +1554,7 @@ class MainWindow(QMainWindow):
                         (name, type_id, model, serial_number, location_id, "Доступен", quantity)
                     )
                     assets_count += 1
-                    print(f"✅ Актив добавлен (строка {row_idx}): {name}")
+                    print(f" Актив добавлен (строка {row_idx}): {name}")
 
                 except Exception as e:
                     errors.append(f"Строка {row_idx}: {str(e)}")
@@ -1595,7 +1595,7 @@ class MainWindow(QMainWindow):
             )
             return new_id
         except Exception as e:
-            print(f"❌ Ошибка при работе с типом актива: {e}")
+            print(f" Ошибка при работе с типом актива: {e}")
             return None
 
     def _get_or_create_location(self, location_name):
@@ -1616,7 +1616,7 @@ class MainWindow(QMainWindow):
             )
             return new_id
         except Exception as e:
-            print(f"❌ Ошибка при работе с местоположением: {e}")
+            print(f" Ошибка при работе с местоположением: {e}")
             return None
 
     def setup_requests_tab(self):
@@ -1699,7 +1699,7 @@ class MainWindow(QMainWindow):
         self.accounts_table.resizeColumnsToContents()
 
         row_count = model.rowCount()
-        print(f"✅ Загружено аккаунтов: {row_count}")
+        print(f" Загружено аккаунтов: {row_count}")
 
     def load_requests_data(self):
         """Загрузка списка запросов на выдачу активов"""
@@ -1748,7 +1748,7 @@ class MainWindow(QMainWindow):
             self.requests_table.resizeColumnsToContents()
 
         row_count = model.rowCount()
-        print(f"✅ Загружено запросов: {row_count}")
+        print(f" Загружено запросов: {row_count}")
 
     def approve_request(self):
         """Одобрение запроса на выдачу актива"""
@@ -1906,9 +1906,9 @@ def main():
     app_icon_path = Path("pictures/InstrumentTracker_icon.png")
     if app_icon_path.exists():
         app.setWindowIcon(QIcon(str(app_icon_path)))
-        print(f"✅ Установлена иконка приложения: {app_icon_path}")
+        print(f" Установлена иконка приложения: {app_icon_path}")
     else:
-        print(f"⚠️ Иконка приложения не найдена: {app_icon_path}")
+        print(f"️ Иконка приложения не найдена: {app_icon_path}")
     
     while True:
         # Показываем окно входа
@@ -1937,16 +1937,16 @@ def main():
             logo_path = Path("pictures/InstrumentTracker_logo.png")
             if logo_path.exists():
                 window.setWindowIcon(QIcon(str(logo_path)))
-                print(f"✅ Установлен логотип окна: {logo_path}")
+                print(f" Установлен логотип окна: {logo_path}")
             else:
-                print(f"⚠️ Логотип окна не найден: {logo_path}")
+                print(f"️ Логотип окна не найден: {logo_path}")
             
             window.show()
-            print("✅ Приложение запущено успешно")
+            print(" Приложение запущено успешно")
             app.exec()  # Ждем закрытия окна
             # После закрытия окна, цикл продолжится и покажет логин снова
         else:
-            print("❌ Вход отменен")
+            print(" Вход отменен")
             break
     
     sys.exit(0)
