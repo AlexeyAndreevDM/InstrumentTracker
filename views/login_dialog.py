@@ -178,8 +178,12 @@ class LoginDialog(QDialog):
         try:
             # Получаем сотрудников
             query = """
-            SELECT e.employee_id, e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.patronymic, '') as full_name
+            SELECT 
+                e.employee_id, 
+                e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.patronymic, '') as full_name,
+                u.username
             FROM Employees e
+            LEFT JOIN Users u ON e.employee_id = u.employee_id
             ORDER BY e.last_name, e.first_name
             """
             employees = self.db.execute_query(query)
@@ -190,19 +194,19 @@ class LoginDialog(QDialog):
             
             # Проверяем дублирующиеся ФИО
             name_counts = {}
-            for emp_id, full_name in employees:
+            for emp_id, full_name, username in employees:
                 full_name = full_name.strip()
                 if full_name in name_counts:
-                    name_counts[full_name].append(emp_id)
+                    name_counts[full_name].append((emp_id, username))
                 else:
-                    name_counts[full_name] = [emp_id]
+                    name_counts[full_name] = [(emp_id, username)]
             
-            # Добавляем сотрудников, если есть дубли - добавляем ID
-            for emp_id, full_name in employees:
+            # Добавляем сотрудников, если есть дубли И у них есть аккаунты - показываем username
+            for emp_id, full_name, username in employees:
                 full_name = full_name.strip()
-                if len(name_counts[full_name]) > 1:
-                    # Есть дубли - показываем ID
-                    display_name = f"{full_name} (ID: {emp_id})"
+                if len(name_counts[full_name]) > 1 and username:
+                    # Есть дубли И есть аккаунт - показываем username
+                    display_name = f"{full_name} ({username})"
                 else:
                     display_name = full_name
                 self.register_employee_combo.addItem(display_name, emp_id)

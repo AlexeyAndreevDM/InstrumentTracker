@@ -296,10 +296,10 @@ class NotificationManager:
     def start_email_checking(self, interval_ms=3600000):
         """Запустить проверку и отправку email (по умолчанию раз в час)"""
         if self.email_notifier.enabled:
-            print("Запуск проверки email-уведомлений...")
+            print(f"Запуск проверки email-уведомлений (каждые {interval_ms//60000} мин)...")
             self.email_timer.start(interval_ms)
-            # Сразу проверяем при старте
-            self._check_and_send_emails()
+            # НЕ отправляем сразу при старте - только по таймеру, чтобы не замедлять загрузку
+            print("Email будут отправляться по расписанию (не при каждом входе)")
         else:
             print("Email-уведомления не настроены")
             

@@ -2305,8 +2305,13 @@ class MainWindow(QMainWindow):
         print(" Загрузка запросов на выдачу активов...")
 
         if not hasattr(self, 'db_connection'):
-            self.db_connection = QSqlDatabase.addDatabase("QSQLITE")
-            self.db_connection.setDatabaseName("inventory.db")
+            # Проверяем, существует ли уже подключение с таким именем
+            connection_name = 'qt_sql_default_connection'
+            if QSqlDatabase.contains(connection_name):
+                self.db_connection = QSqlDatabase.database(connection_name)
+            else:
+                self.db_connection = QSqlDatabase.addDatabase("QSQLITE", connection_name)
+                self.db_connection.setDatabaseName("inventory.db")
 
         if not self.db_connection.isOpen():
             if not self.db_connection.open():
