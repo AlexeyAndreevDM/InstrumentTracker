@@ -1908,12 +1908,14 @@ class MainWindow(QMainWindow):
 
             # Обновляем количество активов
             new_qty = current_qty - 1
-            new_status = 'Выдан' if new_qty == 0 else 'Доступен'
 
             self.db.execute_update(
-                "UPDATE Assets SET quantity = ?, current_status = ? WHERE asset_id = ?",
-                (new_qty, new_status, asset_id)
+                "UPDATE Assets SET quantity = ? WHERE asset_id = ?",
+                (new_qty, asset_id)
             )
+            
+            # Обновляем статус на основе активных выдач
+            self.db.update_asset_status(asset_id)
 
             # Обновляем статус запроса
             self.db.execute_update(

@@ -188,13 +188,10 @@ class IssueDialog(QDialog):
             # Вычисляем новое количество
             new_quantity = current_qty - quantity_issued
 
-            # Определяем новый статус
-            new_status = 'Доступен' if new_quantity > 0 else 'Выдан'
-
-            # Обновляем количество и статус актива
+            # Обновляем количество актива
             self.db.execute_update(
-                "UPDATE Assets SET quantity = ?, current_status = ? WHERE asset_id = ?",
-                (new_quantity, new_status, asset_id)
+                "UPDATE Assets SET quantity = ? WHERE asset_id = ?",
+                (new_quantity, asset_id)
             )
 
             # Добавляем запись в историю с информацией о количестве
@@ -204,6 +201,9 @@ class IssueDialog(QDialog):
                 (asset_id, employee_id, operation_type, operation_date, planned_return_date, notes) 
                 VALUES (?, ?, 'выдача', ?, ?, ?)
             ''', (asset_id, employee_id, current_datetime, planned_return, notes))
+            
+            # Обновляем статус актива на основе активных выдач
+            self.db.update_asset_status(asset_id)
 
             # Логирование выдачи актива
             if AUDIT_ENABLED and hasattr(self.parent(), 'current_user'):

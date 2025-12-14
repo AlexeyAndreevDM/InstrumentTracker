@@ -440,6 +440,9 @@ class EditAssetDialog(QDialog):
                         (asset_id, employee_id, operation_type, operation_date, planned_return_date) 
                         VALUES (?, ?, 'выдача', ?, ?)
                     ''', (self.asset_id, employee_id, issue_date, planned_return_date))
+                
+                # Обновляем статус актива на основе активных выдач
+                self.db.update_asset_status(self.asset_id)
 
             # Если актив списан, добавляем запись в историю
             if self.write_off_checkbox.isChecked():
@@ -455,11 +458,13 @@ class EditAssetDialog(QDialog):
                 
                 # Обновляем количество при списании
                 if new_quantity > 0:
-                    # Если остаток остается, статус остается 'Доступен'
+                    # Если остаток остается, обновляем количество
                     self.db.execute_update(
-                        "UPDATE Assets SET quantity = ?, current_status = 'Доступен' WHERE asset_id = ?",
+                        "UPDATE Assets SET quantity = ? WHERE asset_id = ?",
                         (new_quantity, self.asset_id)
                     )
+                    # Статус обновится на основе активных выдач
+                    self.db.update_asset_status(self.asset_id)
                 else:
                     # Если это последнее количество, устанавливаем 'Списан'
                     self.db.execute_update(

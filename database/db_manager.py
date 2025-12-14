@@ -183,6 +183,57 @@ class DatabaseManager:
         """Получение количества строк в таблице"""
         result = self.execute_query(f"SELECT COUNT(*) FROM {table_name}")
         return result[0][0] if result else 0
+    
+    def update_asset_status(self, asset_id):
+        """
+        Обновить статус актива на основе активных выдач
+        
+        Логика:
+        - 'Выдан' - если есть хотя бы одна активная выдача (operation_type='выдача' AND actual_return_date IS NULL)
+        - 'Доступен' - если нет активных выдач И quantity > 0
+        
+        Args:
+            asset_id: ID актива для обновления статуса
+        """
+        with QMutexLocker(self._mutex):
+            cursor = self.connection.cursor()
+            
+            # Проверяем наличие активных выдач
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM Usage_History 
+                WHERE asset_id = ? 
+                  AND operation_type = 'выдача' 
+                  AND actual_return_date IS NULL
+            """, (asset_id,))
+            
+            active_issues = cursor.fetchone()[0]
+            
+            # Получаем текущее количество
+            cursor.execute("SELECT quantity FROM Assets WHERE asset_id = ?", (asset_id,))
+            result = cursor.fetchone()
+            
+            if not result:
+                return  # Актив не найден
+            
+            quantity = result[0]
+            
+            # Определяем правильный статус
+            if active_issues > 0:
+                new_status = 'Выдан'
+            elif quantity > 0:
+                new_status = 'Доступен'
+            else:
+                new_status = 'Доступен'  # Или можно оставить как есть
+            
+            # Обновляем статус
+            cursor.execute(
+                "UPDATE Assets SET current_status = ? WHERE asset_id = ?",
+                (new_status, asset_id)
+            )
+            self.connection.commit()
+            
+            print(f"Статус актива {asset_id} обновлен: {new_status} (активных выдач: {active_issues}, кол-во: {quantity})")
 
     def close(self):
         """Закрытие соединения с базой данных"""
