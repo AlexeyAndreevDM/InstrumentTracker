@@ -21,6 +21,8 @@ class NotificationWidget(QWidget):
         self.animation_duration = 300  # ms
         self.persistent = persistent
         self.variant = variant
+        self.title = title
+        self.message = message
         
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -133,6 +135,19 @@ class NotificationWidget(QWidget):
         self.close_timer = QTimer()
         self.close_timer.setSingleShot(True)
         self.close_timer.timeout.connect(self.fade_out)
+    
+    def update_theme(self, new_variant):
+        """Обновить тему уведомления"""
+        if self.variant != new_variant:
+            self.variant = new_variant
+            # Перерисовываем UI с новым вариантом
+            # Очищаем старый layout
+            while self.layout().count():
+                child = self.layout().takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            # Создаем заново с новым вариантом
+            self.setup_ui(self.title, self.message)
         
     def show_notification(self):
         """Показать уведомление с анимацией"""
@@ -241,7 +256,7 @@ class NotificationWidget(QWidget):
             self.repaint()
             
         except Exception as e:
-            print(f"❌ Ошибка обновления темы виджета: {e}")
+            print(f" Ошибка обновления темы виджета: {e}")
 
     def reapply_theme(self):
         """Полностью перерисовать уведомление с новой темой"""
@@ -266,7 +281,7 @@ class NotificationManager:
         
     def start_checking(self, interval_ms=60000):
         """Запустить периодическую проверку сроков (по умолчанию каждую минуту)"""
-        print("🔔 Запуск проверки сроков уведомлений...")
+        print("Запуск проверки сроков уведомлений...")
         self.check_timer.start(interval_ms)
         # Сразу проверяем при старте
         self._check_deadlines()
@@ -274,6 +289,15 @@ class NotificationManager:
     def stop_checking(self):
         """Остановить проверку сроков"""
         self.check_timer.stop()
+    
+    def update_all_notifications_theme(self, new_theme):
+        """Обновить тему всех активных уведомлений"""
+        variant = 'dark' if new_theme == 'dark' else 'light'
+        for notification in self.notification_widgets:
+            try:
+                notification.update_theme(variant)
+            except Exception as e:
+                print(f"Ошибка при обновлении темы уведомления: {e}")
         
     def _check_deadlines(self):
         """Проверка сроков возврата и создание уведомлений"""
@@ -329,7 +353,7 @@ class NotificationManager:
                 self.show_notification(notif_type, title, message)
                 
         except Exception as e:
-            print(f"❌ Ошибка при проверке сроков: {e}")
+            print(f" Ошибка при проверке сроков: {e}")
     
     def _mark_as_overdue(self, history_id):
         """Отметить запись как просроченную"""
@@ -349,7 +373,7 @@ class NotificationManager:
                         (new_notes, history_id)
                     )
         except Exception as e:
-            print(f"❌ Ошибка при отметке как просроченная: {e}")
+            print(f" Ошибка при отметке как просроченная: {e}")
     
     def show_notification(self, notif_type='info', title='', message='', persistent=False, variant='default'):
         """Показать всплывающее уведомление"""
@@ -390,15 +414,15 @@ class NotificationManager:
                     pass
                 except Exception as e:
                     # Логируем другие ошибки, но не падаем
-                    print(f"⚠️ Ошибка в on_close: {e}")
+                    print(f" Ошибка в on_close: {e}")
 
             # Используем прямое соединение, чтобы избежать проблем с очередями
             notification.destroyed.connect(on_close, Qt.ConnectionType.DirectConnection)
 
-            print(f"📬 Уведомление: {title} - {message} (persistent={persistent}, variant={variant})")
+            print(f"Уведомление: {title} - {message} (persistent={persistent}, variant={variant})")
 
         except Exception as e:
-            print(f"❌ Ошибка при показе уведомления: {e}")
+            print(f" Ошибка при показе уведомления: {e}")
             import traceback
             traceback.print_exc()
         
@@ -424,7 +448,7 @@ class NotificationManager:
                 return self.db.execute_query(query)
                 
             except Exception as e:
-                print(f"❌ Ошибка при получении просроченных активов: {e}")
+                print(f" Ошибка при получении просроченных активов: {e}")
                 return []
     
     def check_user_notifications(self, employee_id):
@@ -495,7 +519,7 @@ class NotificationManager:
                 self.show_notification('warning', title, message)
             
         except Exception as e:
-            print(f"❌ Ошибка при проверке уведомлений пользователя: {e}")
+            print(f" Ошибка при проверке уведомлений пользователя: {e}")
     
     def check_admin_overdue(self):
         """Проверить все просрочки в системе и показать админу уведомление"""
@@ -558,7 +582,7 @@ class NotificationManager:
                                              persistent=True))
             
         except Exception as e:
-            print(f"❌ Ошибка при проверке просрочек для админа: {e}")
+            print(f" Ошибка при проверке просрочек для админа: {e}")
     
     def check_new_requests_for_admin(self):
         """Проверить новые запросы на выдачу активов и показать уведомление админу"""
@@ -615,7 +639,7 @@ class NotificationManager:
                                              persistent=True))
             
         except Exception as e:
-            print(f"❌ Ошибка при проверке новых запросов для админа: {e}")
+            print(f" Ошибка при проверке новых запросов для админа: {e}")
     
     def cleanup(self):
         """Очистка при закрытии приложения"""
@@ -637,7 +661,7 @@ class NotificationManager:
             else:
                 variant = 'dark'  # По умолчанию тёмная
             
-            print(f"🎨 Обновление темы уведомлений на: {variant}")
+            print(f"Обновление темы уведомлений на: {variant}")
             
             # Обновляем все открытые уведомления
             for notification in self.notification_widgets[:]:  # Используем копию списка
@@ -645,9 +669,9 @@ class NotificationManager:
                     if hasattr(notification, 'update_theme'):
                         notification.update_theme(variant)
                 except Exception as e:
-                    print(f"❌ Ошибка обновления темы уведомления: {e}")
+                    print(f" Ошибка обновления темы уведомления: {e}")
                     # Если не удалось обновить, закрываем уведомление
                     if notification in self.notification_widgets:
                         self.notification_widgets.remove(notification)
         except Exception as e:
-            print(f"❌ Ошибка в update_notifications_theme: {e}")
+            print(f" Ошибка в update_notifications_theme: {e}")

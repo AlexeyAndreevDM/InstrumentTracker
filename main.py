@@ -28,7 +28,7 @@ from audit_logger import AuditLogger
 class MainWindow(QMainWindow):
     def __init__(self, current_user=None):
         super().__init__()
-        print("🚀 Инициализация главного окна...")
+        print("Инициализация главного окна...")
         self.db = DatabaseManager()
         
         # Сохраняем информацию о текущем пользователе
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
                     full_name = None
 
             greeting = f"Добро пожаловать, {full_name}!" if full_name else "Добро пожаловать!"
-            print(f"📬 Показ приветственного уведомления: {greeting}")
+            print(f"Показ приветственного уведомления: {greeting}")
             self.notification_manager.show_notification('info', '', greeting, persistent=False)
 
             # Для обычных пользователей показываем просрочки и напоминания на завтра
@@ -84,11 +84,11 @@ class MainWindow(QMainWindow):
             if self.current_user and self.current_user.get('role') != 'admin':
                 employee_id = self.current_user.get('employee_id')
                 if employee_id:
-                    print(f"🔔 Проверка уведомлений для сотрудника {employee_id}...")
+                    print(f"Проверка уведомлений для сотрудника {employee_id}...")
                     QTimer.singleShot(4500, lambda: self.notification_manager.check_user_notifications(employee_id))
             # Для админов показываем уведомление о всех просрочках
             elif self.current_user and self.current_user.get('role') == 'admin':
-                print("👨‍💼 Проверка просрочек и запросов для админа...")
+                print("Проверка просрочек и запросов для админа...")
                 QTimer.singleShot(4500, lambda: self.notification_manager.check_admin_overdue())
                 QTimer.singleShot(5500, lambda: self.notification_manager.check_new_requests_for_admin())
         except Exception as e:
@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         if not self._startup_notifications_shown:
             self._startup_notifications_shown = True
-            print("🪟 Окно отображается, показываем стартовые уведомления...")
+            print("Окно отображается, показываем стартовые уведомления...")
             QTimer.singleShot(300, self._run_startup_notifications)
 
     def apply_theme(self, theme_name):
@@ -110,14 +110,20 @@ class MainWindow(QMainWindow):
             theme = ThemeManager.get_theme(theme_name)
             self.setStyleSheet(theme['app_stylesheet'])
             self.current_theme = theme_name
-            print(f" Применена тема: {theme_name}")
+            # Обновляем стиль user_info_label
+            if hasattr(self, 'user_info_label'):
+                self.user_info_label.setStyleSheet(theme['user_info_style'])
+            print(f"Применена тема: {theme_name}")
         except Exception as e:
-            print(f" Ошибка при применении темы: {e}")
+            print(f"Ошибка при применении темы: {e}")
     
     def set_theme(self, theme_name):
         """Установить и сохранить тему"""
         self.apply_theme(theme_name)
         ThemeManager.save_theme(theme_name)
+        # Обновляем все активные уведомления
+        if hasattr(self, 'notification_manager'):
+            self.notification_manager.update_all_notifications_theme(theme_name)
         
         # Обновляем user_info_label с новым стилем
         theme = ThemeManager.get_theme(theme_name)
@@ -817,12 +823,12 @@ class MainWindow(QMainWindow):
 
     def edit_asset(self):
         """Редактирование выбранного актива"""
-        print("✏️ Попытка редактирования актива...")
+        print(" Попытка редактирования актива...")
         asset_id = self.get_selected_asset_id()
         if asset_id is None:
             return
 
-        print(f"📝 Редактирование актива ID: {asset_id}")
+        print(f"Редактирование актива ID: {asset_id}")
         dialog = EditAssetDialog(asset_id, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             print(" Актив успешно отредактирован")
@@ -830,12 +836,12 @@ class MainWindow(QMainWindow):
 
     def delete_asset(self):
         """Удаление выбранного актива"""
-        print("🗑️ Попытка удаления актива...")
+        print("Попытка удаления актива...")
         asset_id = self.get_selected_asset_id()
         if asset_id is None:
             return
 
-        print(f"🗑️ Удаление актива ID: {asset_id}")
+        print(f"Удаление актива ID: {asset_id}")
 
         # Создаем диалог для удаления
         dialog = EditAssetDialog(asset_id, self)
@@ -864,14 +870,14 @@ class MainWindow(QMainWindow):
 
     def issue_asset(self):
         """Выдача актива сотруднику"""
-        print("📤 Открытие диалога выдачи актива...")
+        print("Открытие диалога выдачи актива...")
         dialog = IssueDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh_all_data()
 
     def return_asset(self):
         """Возврат актива"""
-        print("📥 Открытие диалога возврата актива...")
+        print("Открытие диалога возврата актива...")
         dialog = ReturnDialog(self, self.current_user)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh_all_data()
@@ -1003,7 +1009,7 @@ class MainWindow(QMainWindow):
 
     def generate_overdue_report(self):
         """Генерация отчета по просроченным активам"""
-        print("📅 Генерация отчета по просрочкам...")
+        print("Генерация отчета по просрочкам...")
         self.current_report_type = "overdue_report"
 
         if not hasattr(self, 'db_connection'):
@@ -1055,7 +1061,7 @@ class MainWindow(QMainWindow):
 
     def generate_usage_report(self):
         """Генерация отчета по использованию активов"""
-        print("📈 Генерация отчета по использованию...")
+        print("Генерация отчета по использованию...")
         self.current_report_type = "usage_report"
 
         if not hasattr(self, 'db_connection'):
@@ -1082,7 +1088,7 @@ class MainWindow(QMainWindow):
 
     def generate_inventory_report(self):
         """Генерация инвентаризационной ведомости"""
-        print("📋 Генерация инвентаризационной ведомости...")
+        print("Генерация инвентаризационной ведомости...")
         self.current_report_type = "inventory_report"
 
         if not hasattr(self, 'db_connection'):
@@ -1487,7 +1493,7 @@ class MainWindow(QMainWindow):
 
     def import_assets_from_excel(self):
         """Импорт активов из Excel файла"""
-        print("📥 Открытие диалога импорта активов из Excel...")
+        print("Открытие диалога импорта активов из Excel...")
         
         file_path, _ = QFileDialog.getOpenFileName(
             self,

@@ -13,7 +13,7 @@ try:
     AUDIT_ENABLED = True
 except ImportError:
     AUDIT_ENABLED = False
-    print("⚠️ AuditLogger не найден, логирование отключено")
+    print(" AuditLogger не найден, логирование отключено")
 
 
 class EditAssetDialog(QDialog):

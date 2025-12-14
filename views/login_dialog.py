@@ -186,7 +186,7 @@ class LoginDialog(QDialog):
             employees = self.db.execute_query(query)
             
             self.register_employee_combo.clear()
-            self.register_employee_combo.addItem("-- Выберите сотрудника --", None)
+            # Не добавляем первую строку, т.к. используется placeholder
             
             for emp_id, full_name in employees:
                 self.register_employee_combo.addItem(full_name.strip(), emp_id)
@@ -291,7 +291,7 @@ class LoginDialog(QDialog):
                 # Вставляем нового сотрудника
                 query = "INSERT INTO Employees (last_name, first_name, patronymic) VALUES (?, ?, ?)"
                 employee_id = self.db.execute_update(query, (last_name, first_name, patronymic))
-                print(f"✅ Создан новый сотрудник: {employee_text} (ID: {employee_id})")
+                print(f" Создан новый сотрудник: {employee_text} (ID: {employee_id})")
             except Exception as e:
                 QMessageBox.critical(self, "Ошибка", f"Ошибка при создании сотрудника:\n{str(e)}")
                 return
