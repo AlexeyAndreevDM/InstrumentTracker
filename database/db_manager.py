@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import sys
 from PyQt6.QtCore import QMutex, QMutexLocker
 
 
@@ -14,14 +15,42 @@ class DatabaseManager:
                 cls._instance._init_db()
             return cls._instance
 
+    def _get_db_path(self):
+        """Получить путь к БД в зависимости от режима запуска"""
+        if getattr(sys, 'frozen', False):
+            # Приложение запущено как bundle
+            if sys.platform == 'darwin':
+                # macOS: сохраняем БД в Application Support
+                app_support = os.path.expanduser('~/Library/Application Support/InstrumentTracker')
+                os.makedirs(app_support, exist_ok=True)
+                db_path = os.path.join(app_support, 'inventory.db')
+                
+                # Копируем начальную БД если её нет
+                if not os.path.exists(db_path):
+                    bundle_db = os.path.join(sys._MEIPASS, 'inventory.db')
+                    if os.path.exists(bundle_db):
+                        import shutil
+                        shutil.copy2(bundle_db, db_path)
+                        print(f"📋 Создана начальная БД: {db_path}")
+                return db_path
+            else:
+                # Windows/Linux: рядом с exe
+                return os.path.join(os.path.dirname(sys.executable), 'inventory.db')
+        else:
+            # Разработка: в текущей директории
+            return 'inventory.db'
+
     def _init_db(self):
         """Инициализация базы данных"""
         print("Инициализация базы данных...")
 
         # НЕ удаляем базу данных! Сохраняем данные между запусками
-        db_exists = os.path.exists('inventory.db')
+        db_path = self._get_db_path()
+        db_exists = os.path.exists(db_path)
+        
+        print(f"📁 Путь к БД: {db_path}")
 
-        self.connection = sqlite3.connect('inventory.db', check_same_thread=False)
+        self.connection = sqlite3.connect(db_path, check_same_thread=False)
         self.connection.execute("PRAGMA journal_mode=WAL")
 
         self._create_tables()

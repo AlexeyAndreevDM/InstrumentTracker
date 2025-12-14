@@ -265,22 +265,35 @@ class MainWindow(QMainWindow):
     def setup_dashboard_tab(self):
         """Настройка вкладки панели управления"""
         layout = QVBoxLayout(self.dashboard_tab)
+        
+        is_admin = self.current_user.get('role') == 'admin'
 
         # Заголовок
-        title_label = QLabel("📊 Панель управления системой учета")
+        if is_admin:
+            title_text = "📊 Панель управления системой учета"
+        else:
+            title_text = "📊 Моя панель управления"
+        title_label = QLabel(title_text)
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
         layout.addWidget(title_label)
 
         # Статистика в виде сетки
         stats_grid = QGridLayout()
 
-        # Виджеты статистики
-        self.total_assets_label = self.create_stat_widget("Всего активов", "0")
-        self.available_assets_label = self.create_stat_widget("Доступно", "0")
-        self.issued_assets_label = self.create_stat_widget("Выдано", "0")
-        self.overdue_assets_label = self.create_stat_widget("Просрочено", "0")
-        self.employees_label = self.create_stat_widget("Сотрудников", "0")
-        self.total_operations_label = self.create_stat_widget("Операций", "0")
+        # Виджеты статистики - названия зависят от роли
+        self.total_assets_label = self.create_stat_widget("Всего активов", "0", "total_assets")
+        self.available_assets_label = self.create_stat_widget("Доступно", "0", "available_assets")
+        
+        if is_admin:
+            self.issued_assets_label = self.create_stat_widget("Выдано", "0", "issued_assets")
+            self.overdue_assets_label = self.create_stat_widget("Просрочено", "0", "overdue_assets")
+            self.employees_label = self.create_stat_widget("Сотрудников", "0", "employees")
+            self.total_operations_label = self.create_stat_widget("Операций", "0", "total_operations")
+        else:
+            self.issued_assets_label = self.create_stat_widget("Выдано мне", "0", "issued_assets")
+            self.overdue_assets_label = self.create_stat_widget("Просрочено у меня", "0", "overdue_assets")
+            self.employees_label = self.create_stat_widget("Сотрудники", "0", "employees")
+            self.total_operations_label = self.create_stat_widget("Моих операций", "0", "total_operations")
 
         # Располагаем виджеты в сетке 2x3
         stats_grid.addWidget(self.total_assets_label, 0, 0)
@@ -299,7 +312,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(separator)
 
         # Последние операции
-        recent_ops_label = QLabel("📝 Последние операции")
+        if is_admin:
+            recent_ops_text = "📝 Последние операции"
+        else:
+            recent_ops_text = "📝 Мои последние операции"
+        recent_ops_label = QLabel(recent_ops_text)
         recent_ops_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
         layout.addWidget(recent_ops_label)
 
@@ -314,7 +331,7 @@ class MainWindow(QMainWindow):
         # Обновляем данные при открытии вкладки
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
-    def create_stat_widget(self, title, value):
+    def create_stat_widget(self, title, value, widget_type):
         """Создание виджета статистики"""
         widget = QWidget()
         widget.setStyleSheet("""
@@ -343,18 +360,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(title_label)
         layout.addWidget(value_label)
 
-        # Сохраняем ссылку на label с значением
-        if title == "Всего активов":
+        # Сохраняем ссылку на label с значением по типу, а не по названию
+        if widget_type == "total_assets":
             self.total_assets_value = value_label
-        elif title == "Доступно":
+        elif widget_type == "available_assets":
             self.available_assets_value = value_label
-        elif title == "Выдано":
+        elif widget_type == "issued_assets":
             self.issued_assets_value = value_label
-        elif title == "Просрочено":
+        elif widget_type == "overdue_assets":
             self.overdue_assets_value = value_label
-        elif title == "Сотрудников":
+        elif widget_type == "employees":
             self.employees_value = value_label
-        elif title == "Операций":
+        elif widget_type == "total_operations":
             self.total_operations_value = value_label
 
         return widget
@@ -375,31 +392,62 @@ class MainWindow(QMainWindow):
         print(" Обновление панели управления...")
 
         try:
-            # Получаем статистику
+            is_admin = self.current_user.get('role') == 'admin'
+            employee_id = self.current_user.get('employee_id')
+            
+            # Общая статистика (для всех)
             total_assets = self.db.execute_query("SELECT COUNT(*) FROM Assets")[0][0]
             available_assets = \
             self.db.execute_query("SELECT COUNT(*) FROM Assets WHERE current_status = 'Доступен'")[0][0]
             
-            # Подсчитываем КОЛИЧЕСТВО выданных единиц (не активов, а выданных штук)
-            issued_count_result = self.db.execute_query("""
-                SELECT COUNT(*)
-                FROM Usage_History
-                WHERE operation_type = 'выдача'
-                  AND actual_return_date IS NULL
-            """)
-            issued_assets = issued_count_result[0][0] if issued_count_result else 0
+            if is_admin:
+                # Для админа - общая статистика по всем
+                issued_count_result = self.db.execute_query("""
+                    SELECT COUNT(*)
+                    FROM Usage_History
+                    WHERE operation_type = 'выдача'
+                      AND actual_return_date IS NULL
+                """)
+                issued_assets = issued_count_result[0][0] if issued_count_result else 0
 
-            overdue_assets = self.db.execute_query("""
-                SELECT COUNT(*) 
-                FROM Usage_History uh
-                JOIN Assets a ON uh.asset_id = a.asset_id
-                WHERE uh.operation_type = 'выдача'
-                    AND uh.actual_return_date IS NULL
-                    AND DATE(uh.planned_return_date) < DATE('now')
-            """)[0][0]
+                overdue_assets = self.db.execute_query("""
+                    SELECT COUNT(*) 
+                    FROM Usage_History uh
+                    JOIN Assets a ON uh.asset_id = a.asset_id
+                    WHERE uh.operation_type = 'выдача'
+                        AND uh.actual_return_date IS NULL
+                        AND DATE(uh.planned_return_date) < DATE('now')
+                """)[0][0]
 
-            total_employees = self.db.execute_query("SELECT COUNT(*) FROM Employees")[0][0]
-            total_operations = self.db.execute_query("SELECT COUNT(*) FROM Usage_History")[0][0]
+                total_employees = self.db.execute_query("SELECT COUNT(*) FROM Employees")[0][0]
+                total_operations = self.db.execute_query("SELECT COUNT(*) FROM Usage_History")[0][0]
+            else:
+                # Для обычного пользователя - персональная статистика
+                issued_count_result = self.db.execute_query("""
+                    SELECT COUNT(*)
+                    FROM Usage_History
+                    WHERE operation_type = 'выдача'
+                      AND actual_return_date IS NULL
+                      AND employee_id = ?
+                """, (employee_id,))
+                issued_assets = issued_count_result[0][0] if issued_count_result else 0
+
+                overdue_assets = self.db.execute_query("""
+                    SELECT COUNT(*) 
+                    FROM Usage_History uh
+                    JOIN Assets a ON uh.asset_id = a.asset_id
+                    WHERE uh.operation_type = 'выдача'
+                        AND uh.actual_return_date IS NULL
+                        AND DATE(uh.planned_return_date) < DATE('now')
+                        AND uh.employee_id = ?
+                """, (employee_id,))[0][0]
+
+                # Для пользователя показываем только свои операции
+                total_employees = 1  # Сам пользователь
+                total_operations = self.db.execute_query(
+                    "SELECT COUNT(*) FROM Usage_History WHERE employee_id = ?", 
+                    (employee_id,)
+                )[0][0]
 
             # Обновляем значения
             self.total_assets_value.setText(str(total_assets))
@@ -427,25 +475,49 @@ class MainWindow(QMainWindow):
             self.recent_operations_table.setModel(None)
 
         model = QSqlQueryModel()
+        
+        is_admin = self.current_user.get('role') == 'admin'
+        employee_id = self.current_user.get('employee_id')
 
-        query = """
-        SELECT 
-            CASE 
-                WHEN uh.operation_type = 'выдача' THEN '📤 Выдача'
-                WHEN uh.operation_type = 'возврат' THEN '📥 Возврат'
-                WHEN uh.operation_type = 'списание' THEN '🗑️ Списание'
-                ELSE uh.operation_type
-            END as 'Тип операции',
-            a.name as 'Актив',
-            e.last_name || ' ' || e.first_name as 'Сотрудник',
-            COALESCE(uh.notes, '') as 'Кол-во / Примечание',
-            uh.operation_date as 'Дата операции'
-        FROM Usage_History uh
-        LEFT JOIN Employees e ON uh.employee_id = e.employee_id
-        LEFT JOIN Assets a ON uh.asset_id = a.asset_id
-        ORDER BY uh.history_id DESC
-        LIMIT 10
-        """
+        if is_admin:
+            # Для админа - все операции
+            query = """
+            SELECT 
+                CASE 
+                    WHEN uh.operation_type = 'выдача' THEN '📤 Выдача'
+                    WHEN uh.operation_type = 'возврат' THEN '📥 Возврат'
+                    WHEN uh.operation_type = 'списание' THEN '🗑️ Списание'
+                    ELSE uh.operation_type
+                END as 'Тип операции',
+                a.name as 'Актив',
+                e.last_name || ' ' || e.first_name as 'Сотрудник',
+                COALESCE(uh.notes, '') as 'Кол-во / Примечание',
+                uh.operation_date as 'Дата операции'
+            FROM Usage_History uh
+            LEFT JOIN Employees e ON uh.employee_id = e.employee_id
+            LEFT JOIN Assets a ON uh.asset_id = a.asset_id
+            ORDER BY uh.history_id DESC
+            LIMIT 10
+            """
+        else:
+            # Для пользователя - только его операции
+            query = f"""
+            SELECT 
+                CASE 
+                    WHEN uh.operation_type = 'выдача' THEN '📤 Выдача'
+                    WHEN uh.operation_type = 'возврат' THEN '📥 Возврат'
+                    WHEN uh.operation_type = 'списание' THEN '🗑️ Списание'
+                    ELSE uh.operation_type
+                END as 'Тип операции',
+                a.name as 'Актив',
+                COALESCE(uh.notes, '') as 'Кол-во / Примечание',
+                uh.operation_date as 'Дата операции'
+            FROM Usage_History uh
+            LEFT JOIN Assets a ON uh.asset_id = a.asset_id
+            WHERE uh.employee_id = {employee_id}
+            ORDER BY uh.history_id DESC
+            LIMIT 10
+            """
 
         model.setQuery(query, self.db_connection)
         self.recent_operations_table.setModel(model)

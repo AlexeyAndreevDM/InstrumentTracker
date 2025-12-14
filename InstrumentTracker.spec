@@ -5,8 +5,12 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('pictures/InstrumentTracker_icon.png', '.'), ('pictures/InstrumentTracker_logo.png', '.')],
-    hiddenimports=[],
+    datas=[
+        ('pictures/InstrumentTracker_icon.png', 'pictures'),
+        ('pictures/InstrumentTracker_logo.png', 'pictures'),
+        ('inventory.db', '.'),
+    ],
+    hiddenimports=['PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -18,21 +22,39 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='InstrumentTracker',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['InstrumentTracker_icon.icns'],
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='InstrumentTracker',
+)
+
+app = BUNDLE(
+    coll,
+    name='InstrumentTracker.app',
+    icon='pictures/InstrumentTracker_icon.png',
+    bundle_identifier='com.instrumenttracker.app',
+    info_plist={
+        'NSPrincipalClass': 'NSApplication',
+        'NSHighResolutionCapable': 'True',
+    },
 )
