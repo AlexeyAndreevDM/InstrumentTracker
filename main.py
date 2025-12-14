@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QLineEdit, QInputDialog, QRadioButton, QDialogButtonBox)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate, QTimer
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon, QKeySequence
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -221,16 +221,14 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("📁 Файл")
 
         export_action = QAction("📤 Экспорт всех данных", self)
+        export_action.setShortcut(QKeySequence("Ctrl+E"))
         export_action.triggered.connect(self.export_all_data)
         file_menu.addAction(export_action)
-
-        backup_action = QAction("💾 Создать резервную копию", self)
-        backup_action.triggered.connect(self.create_backup)
-        file_menu.addAction(backup_action)
 
         file_menu.addSeparator()
 
         exit_action = QAction("🚪 Выход", self)
+        exit_action.setShortcut(QKeySequence("Ctrl+Q"))
         exit_action.triggered.connect(self.logout)
         file_menu.addAction(exit_action)
 
@@ -239,18 +237,29 @@ class MainWindow(QMainWindow):
         
         # Тёмная тема
         dark_theme_action = QAction("🌙 Тёмная тема", self)
+        dark_theme_action.setShortcut(QKeySequence("Ctrl+D"))
         dark_theme_action.triggered.connect(lambda: self.set_theme('dark'))
         view_menu.addAction(dark_theme_action)
         
         # Светлая тема
         light_theme_action = QAction("☀️ Светлая тема", self)
+        light_theme_action.setShortcut(QKeySequence("Ctrl+L"))
         light_theme_action.triggered.connect(lambda: self.set_theme('light'))
         view_menu.addAction(light_theme_action)
+        
+        view_menu.addSeparator()
+        
+        # Обновить
+        refresh_action = QAction("🔄 Обновить", self)
+        refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)  # F5 или Ctrl+R
+        refresh_action.triggered.connect(self.refresh_current_tab)
+        view_menu.addAction(refresh_action)
 
         # Меню Справка
         help_menu = menubar.addMenu("❓ Справка")
 
         help_action = QAction("📘 Руководство пользователя", self)
+        help_action.setShortcut(QKeySequence.StandardKey.HelpContents)  # F1
         help_action.triggered.connect(self.show_help)
         help_menu.addAction(help_action)
 
@@ -386,6 +395,11 @@ class MainWindow(QMainWindow):
             self.load_assets_data()
         elif tab_text == "🔄 Операции":
             self.load_history_data()
+    
+    def refresh_current_tab(self):
+        """Обновление текущей вкладки"""
+        current_index = self.tabs.currentIndex()
+        self.on_tab_changed(current_index)
 
     def update_dashboard(self):
         """Обновление данных на панели управления"""
@@ -442,8 +456,9 @@ class MainWindow(QMainWindow):
                         AND uh.employee_id = ?
                 """, (employee_id,))[0][0]
 
-                # Для пользователя показываем только свои операции
-                total_employees = 1  # Сам пользователь
+                # Для пользователя показываем общее количество сотрудников
+                total_employees = self.db.execute_query("SELECT COUNT(*) FROM Employees")[0][0]
+                # Но количество операций - только свои
                 total_operations = self.db.execute_query(
                     "SELECT COUNT(*) FROM Usage_History WHERE employee_id = ?", 
                     (employee_id,)
@@ -531,10 +546,15 @@ class MainWindow(QMainWindow):
         buttons_layout = QHBoxLayout()
 
         self.btn_add = QPushButton("➕ Добавить актив")
+        self.btn_add.setShortcut(QKeySequence("Ctrl+N"))
         self.btn_edit = QPushButton("✏️ Редактировать")
+        self.btn_edit.setShortcut(QKeySequence("Ctrl+E"))
         self.btn_delete = QPushButton("🗑️ Удалить")
+        self.btn_delete.setShortcut(QKeySequence.StandardKey.Delete)
         self.btn_import = QPushButton("📥 Импорт из Excel")
+        self.btn_import.setShortcut(QKeySequence("Ctrl+I"))
         self.btn_refresh = QPushButton("🔄 Обновить")
+        self.btn_refresh.setShortcut(QKeySequence("F5"))
 
         buttons_layout.addWidget(self.btn_add)
         buttons_layout.addWidget(self.btn_edit)
@@ -602,9 +622,13 @@ class MainWindow(QMainWindow):
         operations_layout = QHBoxLayout()
 
         self.btn_issue = QPushButton("📤 Выдать актив")
+        self.btn_issue.setShortcut(QKeySequence("Ctrl+Shift+I"))
         self.btn_return = QPushButton("📥 Вернуть актив")
+        self.btn_return.setShortcut(QKeySequence("Ctrl+Shift+R"))
         self.btn_request = QPushButton("📝 Запросить актив")  # Новая кнопка для пользователей
+        self.btn_request.setShortcut(QKeySequence("Ctrl+Shift+A"))
         self.btn_history = QPushButton("🔄 Обновить историю")
+        self.btn_history.setShortcut(QKeySequence("F5"))
 
         operations_layout.addWidget(self.btn_issue)
         operations_layout.addWidget(self.btn_return)
@@ -1540,13 +1564,39 @@ class MainWindow(QMainWindow):
             <li><b>Экспорт:</b> сохранение отчетов в CSV или Excel формате</li>
         </ul>
 
-        <h3>5. Быстрые клавиши</h3>
+        <h3>5. Горячие клавиши</h3>
+        <p><i>На macOS вместо Ctrl используйте ⌘ (Command)</i></p>
+        
+        <h4>Общие действия:</h4>
         <ul>
-            <li><b>F5:</b> Обновить текущую вкладку</li>
+            <li><b>Ctrl+Q:</b> Выход из приложения</li>
+            <li><b>Ctrl+E:</b> Экспорт всех данных</li>
+            <li><b>F5 или Ctrl+R:</b> Обновить текущую вкладку</li>
+            <li><b>F1:</b> Открыть руководство пользователя</li>
+        </ul>
+        
+        <h4>Тема оформления:</h4>
+        <ul>
+            <li><b>Ctrl+D:</b> Переключиться на тёмную тему</li>
+            <li><b>Ctrl+L:</b> Переключиться на светлую тему</li>
+        </ul>
+        
+        <h4>Каталог активов (только админ):</h4>
+        <ul>
             <li><b>Ctrl+N:</b> Добавить новый актив</li>
             <li><b>Ctrl+E:</b> Редактировать выбранный актив</li>
-            <li><b>Ctrl+F:</b> Поиск в текущей таблице</li>
-            <li><b>Ctrl+S:</b> Сохранить/экспортировать отчет</li>
+            <li><b>Delete:</b> Удалить выбранный актив</li>
+            <li><b>Ctrl+I:</b> Импорт из Excel</li>
+            <li><b>F5:</b> Обновить список активов</li>
+            <li><b>Двойной клик:</b> Редактировать актив</li>
+        </ul>
+        
+        <h4>Операции:</h4>
+        <ul>
+            <li><b>Ctrl+Shift+I:</b> Выдать актив (только админ)</li>
+            <li><b>Ctrl+Shift+R:</b> Вернуть актив</li>
+            <li><b>Ctrl+Shift+A:</b> Запросить актив</li>
+            <li><b>F5:</b> Обновить историю операций</li>
         </ul>
 
         <p>Для получения дополнительной помощи обратитесь к администратору системы.</p>
