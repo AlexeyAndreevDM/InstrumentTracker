@@ -253,8 +253,9 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         
         # Обновить
-        refresh_action = QAction("🔄 Обновить", self)
+        refresh_action = QAction("Обновить", self)
         refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)  # F5 или Ctrl+R
+        refresh_action.setStatusTip("Обновить данные текущей вкладки")
         refresh_action.triggered.connect(self.refresh_current_tab)
         view_menu.addAction(refresh_action)
 
