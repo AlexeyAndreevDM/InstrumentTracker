@@ -300,5 +300,32 @@
     "details": {
       "role": "user"
     }
+  },
+  {
+    "timestamp": "2025-12-14T12:03:15.836382",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-14T12:19:11.671793",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-14T12:23:06.369495",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
   }
 ]

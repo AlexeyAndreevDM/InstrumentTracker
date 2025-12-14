@@ -115,7 +115,6 @@ class LoginDialog(QDialog):
         self.register_employee_combo = QComboBox()
         self.register_employee_combo.setEditable(True)
         self.register_employee_combo.setFixedHeight(30)
-        self.register_employee_combo.setPlaceholderText("--Выберите сотрудника или введите ФИО--")
         self.register_employee_combo.currentIndexChanged.connect(self.on_employee_selected)
         self.register_employee_combo.editTextChanged.connect(self.on_employee_text_changed)
         
@@ -177,7 +176,7 @@ class LoginDialog(QDialog):
     def load_employees_to_combo(self):
         """Загрузка списка сотрудников"""
         try:
-            # Получаем сотрудников, у которых еще нет аккаунта
+            # Получаем сотрудников
             query = """
             SELECT e.employee_id, e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.patronymic, '') as full_name
             FROM Employees e
@@ -186,10 +185,27 @@ class LoginDialog(QDialog):
             employees = self.db.execute_query(query)
             
             self.register_employee_combo.clear()
-            # Не добавляем первую строку, т.к. используется placeholder
+            # Добавляем первый элемент для выбора
+            self.register_employee_combo.addItem("--Выберите сотрудника--", None)
             
+            # Проверяем дублирующиеся ФИО
+            name_counts = {}
             for emp_id, full_name in employees:
-                self.register_employee_combo.addItem(full_name.strip(), emp_id)
+                full_name = full_name.strip()
+                if full_name in name_counts:
+                    name_counts[full_name].append(emp_id)
+                else:
+                    name_counts[full_name] = [emp_id]
+            
+            # Добавляем сотрудников, если есть дубли - добавляем ID
+            for emp_id, full_name in employees:
+                full_name = full_name.strip()
+                if len(name_counts[full_name]) > 1:
+                    # Есть дубли - показываем ID
+                    display_name = f"{full_name} (ID: {emp_id})"
+                else:
+                    display_name = full_name
+                self.register_employee_combo.addItem(display_name, emp_id)
         
         except Exception as e:
             print(f"Ошибка загрузки сотрудников: {e}")
@@ -223,7 +239,8 @@ class LoginDialog(QDialog):
             return
         
         text = text.strip()
-        if text and text != "--Выберите сотрудника или введите ФИО--":
+        # Игнорируем первый элемент списка
+        if text and text != "--Выберите сотрудника--":
             # Есть текст - генерируем username
             next_user_num = self._get_next_user_number()
             username = f"user{next_user_num}"
@@ -282,11 +299,19 @@ class LoginDialog(QDialog):
         # Если employee_id не выбран, но есть текст - создаём нового сотрудника
         if not employee_id and employee_text:
             try:
-                # Разбираем ФИО: может быть "Иванов Иван", "Иванов Иван Иванович", или просто "Иван Иванович"
+                # Валидация ФИО: должно быть ровно 3 слова (Фамилия Имя Отчество)
                 parts = employee_text.split()
-                last_name = parts[0] if len(parts) > 0 else ""
-                first_name = parts[1] if len(parts) > 1 else ""
-                patronymic = parts[2] if len(parts) > 2 else None
+                if len(parts) != 3:
+                    QMessageBox.warning(
+                        self, 
+                        "Ошибка валидации", 
+                        "ФИО должно состоять из 3 слов: Фамилия Имя Отчество\n\nПример: Иванов Иван Иванович"
+                    )
+                    return
+                
+                last_name = parts[0]
+                first_name = parts[1]
+                patronymic = parts[2]
                 
                 # Вставляем нового сотрудника
                 query = "INSERT INTO Employees (last_name, first_name, patronymic) VALUES (?, ?, ?)"

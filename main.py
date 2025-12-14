@@ -1671,10 +1671,19 @@ class MainWindow(QMainWindow):
         title_label.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px; background-color: #e8f5e9; color: #000000; border-radius: 5px;")
         layout.addWidget(title_label)
 
-        # Кнопка обновления
+        # Кнопки управления
+        buttons_layout = QHBoxLayout()
+        
         refresh_btn = QPushButton("🔄 Обновить")
         refresh_btn.clicked.connect(self.load_accounts_data)
-        layout.addWidget(refresh_btn)
+        buttons_layout.addWidget(refresh_btn)
+        
+        delete_account_btn = QPushButton("🗑️ Удалить аккаунт")
+        delete_account_btn.clicked.connect(self.delete_account)
+        buttons_layout.addWidget(delete_account_btn)
+        
+        buttons_layout.addStretch()
+        layout.addLayout(buttons_layout)
 
         # Таблица аккаунтов
         self.accounts_table = QTableView()
@@ -1706,6 +1715,84 @@ class MainWindow(QMainWindow):
 
         row_count = model.rowCount()
         print(f" Загружено аккаунтов: {row_count}")
+
+    def delete_account(self):
+        """Удаление аккаунта пользователя с подтверждением пароля"""
+        # Проверяем, выбрана ли строка
+        selected_indexes = self.accounts_table.selectedIndexes()
+        if not selected_indexes:
+            QMessageBox.warning(self, "Ошибка", "Выберите аккаунт для удаления!")
+            return
+        
+        # Получаем данные выбранной строки
+        row = selected_indexes[0].row()
+        model = self.accounts_table.model()
+        
+        user_id = model.data(model.index(row, 0))
+        user_name = model.data(model.index(row, 1))
+        username = model.data(model.index(row, 2))
+        user_role = model.data(model.index(row, 4))
+        
+        # Нельзя удалить админа
+        if user_role == 'admin':
+            QMessageBox.warning(self, "Ошибка", "Нельзя удалить аккаунт администратора!")
+            return
+        
+        # Подтверждение удаления
+        confirm = QMessageBox.question(
+            self,
+            "Подтверждение удаления",
+            f"Вы уверены, что хотите удалить аккаунт?\n\nФИО: {user_name}\nЛогин: {username}\n\nЭто действие необратимо!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Запрос пароля для подтверждения
+        from PyQt6.QtWidgets import QInputDialog, QLineEdit
+        password, ok = QInputDialog.getText(
+            self,
+            "Подтверждение удаления",
+            "Введите ваш пароль для подтверждения удаления:",
+            QLineEdit.EchoMode.Password
+        )
+        
+        if not ok or not password:
+            return
+        
+        # Проверяем пароль текущего администратора
+        import hashlib
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        
+        # Специальный случай для admin/admin
+        if self.current_user.get('username') == 'admin' and password == 'admin':
+            password_valid = True
+        else:
+            # Проверяем пароль из БД
+            check_query = "SELECT password FROM Users WHERE user_id = ?"
+            result = self.db.execute_query(check_query, (self.current_user.get('user_id'),))
+            password_valid = result and result[0][0] == password_hash
+        
+        if not password_valid:
+            QMessageBox.critical(self, "Ошибка", "Неверный пароль!")
+            return
+        
+        # Удаляем аккаунт
+        try:
+            delete_query = "DELETE FROM Users WHERE user_id = ?"
+            self.db.execute_update(delete_query, (user_id,))
+            
+            QMessageBox.information(self, "Успех", f"Аккаунт '{username}' успешно удален!")
+            print(f"Удален аккаунт: {username} (ID: {user_id})")
+            
+            # Обновляем таблицу
+            self.load_accounts_data()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при удалении аккаунта:\n{str(e)}")
+            print(f"Ошибка удаления аккаунта: {e}")
 
     def load_requests_data(self):
         """Загрузка списка запросов на выдачу активов"""
