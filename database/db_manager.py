@@ -31,7 +31,9 @@ class DatabaseManager:
                     if os.path.exists(bundle_db):
                         import shutil
                         shutil.copy2(bundle_db, db_path)
-                        print(f"📋 Создана начальная БД: {db_path}")
+                        print(f"📋 Скопирована БД из bundle: {db_path}")
+                    else:
+                        print(f"📋 БД в bundle не найдена, будет создана новая: {db_path}")
                 return db_path
             else:
                 # Windows/Linux: рядом с exe
@@ -55,8 +57,13 @@ class DatabaseManager:
 
         self._create_tables()
 
-        # Заполняем тестовыми данными только если база новая
-        if not db_exists:
+        # Проверяем, есть ли данные в БД (проверяем таблицу Employees)
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Employees")
+        has_data = cursor.fetchone()[0] > 0
+
+        # Заполняем тестовыми данными если база новая или пустая
+        if not db_exists or not has_data:
             self._populate_test_data()
             print(" Новая база данных создана с тестовыми данными")
         else:

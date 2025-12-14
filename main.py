@@ -721,7 +721,9 @@ class MainWindow(QMainWindow):
 
         if not hasattr(self, 'db_connection'):
             self.db_connection = QSqlDatabase.addDatabase("QSQLITE")
-            self.db_connection.setDatabaseName("inventory.db")
+            # Используем тот же путь к БД, что и db_manager
+            db_path = self.db._get_db_path()
+            self.db_connection.setDatabaseName(db_path)
 
         if not self.db_connection.isOpen():
             if not self.db_connection.open():
@@ -2433,7 +2435,9 @@ class MainWindow(QMainWindow):
                 self.db_connection = QSqlDatabase.database(connection_name)
             else:
                 self.db_connection = QSqlDatabase.addDatabase("QSQLITE", connection_name)
-                self.db_connection.setDatabaseName("inventory.db")
+                # Используем тот же путь к БД, что и db_manager
+                db_path = self.db._get_db_path()
+                self.db_connection.setDatabaseName(db_path)
 
         if not self.db_connection.isOpen():
             if not self.db_connection.open():
