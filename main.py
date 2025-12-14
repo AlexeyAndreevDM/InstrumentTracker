@@ -5,7 +5,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableView, QVBoxLayout,
                              QWidget, QPushButton, QMessageBox, QHBoxLayout, QDialog,
                              QTabWidget, QLabel, QDateEdit, QComboBox, QGridLayout,
-                             QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox, QButtonGroup)
+                             QFrame, QTextEdit, QMenuBar, QFileDialog, QGroupBox, QButtonGroup,
+                             QLineEdit, QInputDialog, QRadioButton, QDialogButtonBox)
 from PyQt6.QtSql import QSqlDatabase, QSqlQueryModel, QSqlQuery
 from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QAction, QIcon
@@ -192,6 +193,11 @@ class MainWindow(QMainWindow):
             self.accounts_tab = QWidget()
             self.setup_accounts_tab()
             self.tabs.addTab(self.accounts_tab, "👥 Аккаунты")
+        else:
+            # Вкладка для обычного пользователя: Мой профиль
+            self.user_profile_tab = QWidget()
+            self.setup_user_profile_tab()
+            self.tabs.addTab(self.user_profile_tab, "👤 Мой профиль")
 
         # Вкладка 5: Отчеты
         self.reports_tab = QWidget()
@@ -1685,6 +1691,10 @@ class MainWindow(QMainWindow):
         refresh_btn.clicked.connect(self.load_accounts_data)
         buttons_layout.addWidget(refresh_btn)
         
+        send_email_btn = QPushButton("📧 Отправить письмо")
+        send_email_btn.clicked.connect(self.send_email_to_employee)
+        buttons_layout.addWidget(send_email_btn)
+        
         delete_account_btn = QPushButton("🗑️ Удалить аккаунт")
         delete_account_btn.clicked.connect(self.delete_account)
         buttons_layout.addWidget(delete_account_btn)
@@ -1800,6 +1810,447 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при удалении аккаунта:\n{str(e)}")
             print(f"Ошибка удаления аккаунта: {e}")
+
+    def send_email_to_employee(self):
+        """Отправка email-уведомления выбранному сотруднику"""
+        # Проверяем, выбран ли аккаунт
+        current_index = self.accounts_table.currentIndex()
+        if not current_index.isValid():
+            QMessageBox.warning(self, "Ошибка", "Выберите сотрудника из списка!")
+            return
+        
+        model = self.accounts_table.model()
+        row = current_index.row()
+        
+        # Получаем данные сотрудника
+        user_id = model.data(model.index(row, 0))  # ID
+        employee_name = model.data(model.index(row, 1))  # ФИО
+        username = model.data(model.index(row, 2))  # Логин
+        
+        # Получаем employee_id и email
+        employee_data = self.db.execute_query("""
+            SELECT e.employee_id, e.email
+            FROM Users u
+            JOIN Employees e ON u.employee_id = e.employee_id
+            WHERE u.user_id = ?
+        """, (user_id,))
+        
+        if not employee_data:
+            QMessageBox.warning(self, "Ошибка", "Не удалось получить данные сотрудника!")
+            return
+        
+        employee_id, email = employee_data[0]
+        
+        if not email or '@' not in email:
+            QMessageBox.warning(
+                self, 
+                "Ошибка", 
+                f"У сотрудника {employee_name} не указан email адрес!\n\n"
+                "Добавьте email в профиле сотрудника."
+            )
+            return
+        
+        # Проверяем, настроен ли email-notifier
+        if not hasattr(self.notification_manager, 'email_notifier') or not self.notification_manager.email_notifier.enabled:
+            QMessageBox.warning(
+                self,
+                "Email не настроен",
+                "Email-уведомления не настроены!\n\n"
+                "Настройте SMTP-сервер в main.py:\n"
+                "self.notification_manager.configure_email(...)"
+            )
+            return
+        
+        # Получаем активные выдачи сотрудника
+        active_issues = self.db.execute_query("""
+            SELECT 
+                a.name,
+                uh.planned_return_date,
+                CAST((julianday(uh.planned_return_date) - julianday('now')) AS INTEGER) as days_until
+            FROM Usage_History uh
+            JOIN Assets a ON uh.asset_id = a.asset_id
+            WHERE uh.employee_id = ?
+                AND uh.operation_type = 'выдача'
+                AND uh.actual_return_date IS NULL
+            ORDER BY uh.planned_return_date ASC
+        """, (employee_id,))
+        
+        if not active_issues:
+            QMessageBox.information(
+                self,
+                "Нет активных выдач",
+                f"У сотрудника {employee_name} нет активных выдач инструментов."
+            )
+            return
+        
+        # Показываем диалог выбора темы письма
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Выбор темы письма")
+        dialog.setMinimumWidth(500)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        
+        # Заголовок
+        header = QLabel(f"Отправка письма сотруднику: {employee_name}")
+        header.setStyleSheet("font-weight: bold; font-size: 14px; padding: 10px;")
+        dialog_layout.addWidget(header)
+        
+        info_label = QLabel(f"Email: {email}")
+        info_label.setStyleSheet("color: #666; padding: 5px;")
+        dialog_layout.addWidget(info_label)
+        
+        # Список активных выдач
+        issues_text = "Активные выдачи:\n"
+        has_overdue = False
+        has_upcoming = False
+        
+        for asset_name, return_date, days_until in active_issues:
+            if days_until < 0:
+                status = f"🚨 ПРОСРОЧКА {abs(days_until)} дн."
+                has_overdue = True
+            elif days_until == 0:
+                status = "⚠️ Срок истекает СЕГОДНЯ"
+                has_overdue = True
+            elif days_until == 1:
+                status = "⏰ Срок истекает ЗАВТРА"
+                has_upcoming = True
+            else:
+                status = f"Осталось {days_until} дн."
+                has_upcoming = True
+            
+            issues_text += f"  • {asset_name} — {return_date} ({status})\n"
+        
+        issues_label = QLabel(issues_text)
+        issues_label.setStyleSheet("background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;")
+        dialog_layout.addWidget(issues_label)
+        
+        # Выбор темы письма
+        theme_group = QGroupBox("Выберите тему письма:")
+        theme_layout = QVBoxLayout()
+        
+        radio_upcoming = QRadioButton("⏰ Приближается срок сдачи (напоминание)")
+        radio_overdue = QRadioButton("🚨 Есть просрочка (срочное уведомление)")
+        
+        # Выбираем по умолчанию в зависимости от наличия просрочек
+        if has_overdue:
+            radio_overdue.setChecked(True)
+        else:
+            radio_upcoming.setChecked(True)
+        
+        theme_layout.addWidget(radio_upcoming)
+        theme_layout.addWidget(radio_overdue)
+        theme_group.setLayout(theme_layout)
+        dialog_layout.addWidget(theme_group)
+        
+        # Кнопки
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(button_box)
+        
+        # Показываем диалог
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        
+        # Определяем тему
+        is_overdue = radio_overdue.isChecked()
+        
+        # Отправляем письма для каждого инструмента
+        sent_count = 0
+        failed_count = 0
+        
+        for asset_name, return_date, days_until in active_issues:
+            # Фильтруем по выбранной теме
+            if is_overdue and days_until >= 1:
+                continue  # Пропускаем не просроченные
+            if not is_overdue and days_until < 0:
+                continue  # Пропускаем просроченные
+            
+            try:
+                success = self.notification_manager.email_notifier.send_deadline_warning(
+                    employee_email=email,
+                    employee_name=employee_name,
+                    asset_name=asset_name,
+                    deadline_date=return_date,
+                    days_until=days_until
+                )
+                
+                if success:
+                    sent_count += 1
+                else:
+                    failed_count += 1
+                    
+            except Exception as e:
+                print(f"Ошибка отправки письма: {e}")
+                failed_count += 1
+        
+        # Показываем результат
+        if sent_count > 0:
+            QMessageBox.information(
+                self,
+                "Письма отправлены",
+                f"✅ Отправлено писем: {sent_count}\n"
+                f"{'❌ Ошибок: ' + str(failed_count) if failed_count > 0 else ''}\n\n"
+                f"Получатель: {employee_name} ({email})"
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Письма не отправлены",
+                f"Не найдено инструментов для выбранной темы письма.\n\n"
+                f"{'Попробуйте выбрать другую тему.' if failed_count == 0 else 'Произошли ошибки при отправке.'}"
+            )
+
+    def setup_user_profile_tab(self):
+        """Настройка вкладки профиля пользователя"""
+        layout = QVBoxLayout(self.user_profile_tab)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Заголовок
+        title_label = QLabel("👤 Мой профиль")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px; background-color: #e3f2fd; color: #000000; border-radius: 5px;")
+        layout.addWidget(title_label)
+
+        # Описание
+        info_label = QLabel("Здесь вы можете просмотреть и изменить свою личную информацию. Для сохранения изменений потребуется ввести пароль.")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; padding: 5px;")
+        layout.addWidget(info_label)
+
+        # Форма с полями
+        form_widget = QWidget()
+        form_layout = QGridLayout(form_widget)
+        form_layout.setSpacing(10)
+
+        # Получаем данные пользователя
+        employee_id = self.current_user.get('employee_id')
+        if employee_id:
+            employee_data = self.db.execute_query("""
+                SELECT e.last_name, e.first_name, e.patronymic, 
+                       p.position_name, e.phone, e.email
+                FROM Employees e
+                LEFT JOIN Positions p ON e.position_id = p.position_id
+                WHERE e.employee_id = ?
+            """, (employee_id,))
+            
+            if employee_data:
+                last_name, first_name, patronymic, position_name, phone, email = employee_data[0]
+            else:
+                last_name, first_name, patronymic, position_name, phone, email = "", "", "", "", "", ""
+        else:
+            last_name, first_name, patronymic, position_name, phone, email = "", "", "", "", "", ""
+
+        # Поле: Фамилия
+        row = 0
+        form_layout.addWidget(QLabel("Фамилия:"), row, 0)
+        self.profile_last_name = QLineEdit(last_name if last_name else "")
+        self.profile_last_name.setPlaceholderText("Введите фамилию")
+        form_layout.addWidget(self.profile_last_name, row, 1)
+
+        # Поле: Имя
+        row += 1
+        form_layout.addWidget(QLabel("Имя:"), row, 0)
+        self.profile_first_name = QLineEdit(first_name if first_name else "")
+        self.profile_first_name.setPlaceholderText("Введите имя")
+        form_layout.addWidget(self.profile_first_name, row, 1)
+
+        # Поле: Отчество
+        row += 1
+        form_layout.addWidget(QLabel("Отчество:"), row, 0)
+        self.profile_patronymic = QLineEdit(patronymic if patronymic else "")
+        self.profile_patronymic.setPlaceholderText("Введите отчество (необязательно)")
+        form_layout.addWidget(self.profile_patronymic, row, 1)
+
+        # Поле: Должность (только чтение)
+        row += 1
+        form_layout.addWidget(QLabel("Должность:"), row, 0)
+        self.profile_position = QLineEdit(position_name if position_name else "Не указана")
+        self.profile_position.setReadOnly(True)
+        self.profile_position.setStyleSheet("background-color: #f0f0f0;")
+        form_layout.addWidget(self.profile_position, row, 1)
+
+        # Поле: Телефон
+        row += 1
+        form_layout.addWidget(QLabel("Телефон:"), row, 0)
+        self.profile_phone = QLineEdit(phone if phone else "+7")
+        self.profile_phone.setPlaceholderText("+7 (XXX) XXX-XX-XX")
+        # Устанавливаем валидатор для телефона
+        self.profile_phone.textChanged.connect(self._validate_phone_input)
+        form_layout.addWidget(self.profile_phone, row, 1)
+
+        # Поле: Email
+        row += 1
+        form_layout.addWidget(QLabel("Email:"), row, 0)
+        self.profile_email = QLineEdit(email if email else "AlexAndreev132@yandex.ru")
+        self.profile_email.setPlaceholderText("example@domain.com")
+        form_layout.addWidget(self.profile_email, row, 1)
+
+        layout.addWidget(form_widget)
+
+        # Кнопки
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addStretch()
+
+        reset_btn = QPushButton("🔄 Сбросить изменения")
+        reset_btn.clicked.connect(self.reset_profile_form)
+        buttons_layout.addWidget(reset_btn)
+
+        save_btn = QPushButton("💾 Сохранить изменения")
+        save_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px 20px;")
+        save_btn.clicked.connect(self.save_profile_changes)
+        buttons_layout.addWidget(save_btn)
+
+        layout.addLayout(buttons_layout)
+        layout.addStretch()
+
+    def _validate_phone_input(self, text):
+        """Валидация ввода телефона - автоматически добавляет +7"""
+        if not text.startswith("+7"):
+            self.profile_phone.setText("+7")
+            self.profile_phone.setCursorPosition(2)
+
+    def reset_profile_form(self):
+        """Сброс формы к исходным значениям"""
+        employee_id = self.current_user.get('employee_id')
+        if not employee_id:
+            return
+
+        employee_data = self.db.execute_query("""
+            SELECT e.last_name, e.first_name, e.patronymic, 
+                   p.position_name, e.phone, e.email
+            FROM Employees e
+            LEFT JOIN Positions p ON e.position_id = p.position_id
+            WHERE e.employee_id = ?
+        """, (employee_id,))
+
+        if employee_data:
+            last_name, first_name, patronymic, position_name, phone, email = employee_data[0]
+            self.profile_last_name.setText(last_name if last_name else "")
+            self.profile_first_name.setText(first_name if first_name else "")
+            self.profile_patronymic.setText(patronymic if patronymic else "")
+            self.profile_position.setText(position_name if position_name else "Не указана")
+            self.profile_phone.setText(phone if phone else "+7")
+            self.profile_email.setText(email if email else "AlexAndreev132@yandex.ru")
+
+        QMessageBox.information(self, "Сброшено", "Форма возвращена к исходным значениям")
+
+    def save_profile_changes(self):
+        """Сохранение изменений профиля с подтверждением паролем"""
+        # Валидация полей
+        last_name = self.profile_last_name.text().strip()
+        first_name = self.profile_first_name.text().strip()
+        patronymic = self.profile_patronymic.text().strip()
+        phone = self.profile_phone.text().strip()
+        email = self.profile_email.text().strip()
+
+        # Проверка обязательных полей
+        if not last_name:
+            QMessageBox.warning(self, "Ошибка", "Фамилия не может быть пустой")
+            return
+
+        if not first_name:
+            QMessageBox.warning(self, "Ошибка", "Имя не может быть пустым")
+            return
+
+        # Валидация: только буквы в ФИО
+        if not last_name.replace('-', '').isalpha():
+            QMessageBox.warning(self, "Ошибка", "Фамилия должна содержать только буквы")
+            return
+
+        if not first_name.replace('-', '').isalpha():
+            QMessageBox.warning(self, "Ошибка", "Имя должно содержать только буквы")
+            return
+
+        if patronymic and not patronymic.replace('-', '').isalpha():
+            QMessageBox.warning(self, "Ошибка", "Отчество должно содержать только буквы")
+            return
+
+        # Валидация телефона
+        if not phone.startswith("+7"):
+            QMessageBox.warning(self, "Ошибка", "Номер телефона должен начинаться с +7")
+            return
+
+        if len(phone) < 12:
+            QMessageBox.warning(self, "Ошибка", "Введите корректный номер телефона")
+            return
+
+        # Валидация email
+        if email and '@' not in email:
+            QMessageBox.warning(self, "Ошибка", "Введите корректный email адрес")
+            return
+
+        # Подтверждение изменений
+        confirm = QMessageBox.question(
+            self,
+            "Подтверждение",
+            f"Сохранить следующие изменения?\n\n"
+            f"ФИО: {last_name} {first_name} {patronymic}\n"
+            f"Телефон: {phone}\n"
+            f"Email: {email}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        # Запрос пароля для подтверждения
+        password, ok = QInputDialog.getText(
+            self,
+            "Подтверждение пароля",
+            "Введите ваш пароль для подтверждения изменений:",
+            QLineEdit.EchoMode.Password
+        )
+
+        if not ok or not password:
+            return
+
+        # Проверка пароля
+        import hashlib
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        
+        user_id = self.current_user.get('user_id')
+        stored_hash = self.db.execute_query(
+            "SELECT password FROM Users WHERE user_id = ?",
+            (user_id,)
+        )
+
+        if not stored_hash or stored_hash[0][0] != password_hash:
+            QMessageBox.critical(self, "Ошибка", "Неверный пароль!")
+            return
+
+        # Сохранение изменений
+        try:
+            employee_id = self.current_user.get('employee_id')
+            
+            # Применяем capitalize()
+            last_name = last_name.capitalize()
+            first_name = first_name.capitalize()
+            patronymic = patronymic.capitalize() if patronymic else None
+
+            self.db.execute_update("""
+                UPDATE Employees 
+                SET last_name = ?, first_name = ?, patronymic = ?, phone = ?, email = ?
+                WHERE employee_id = ?
+            """, (last_name, first_name, patronymic, phone, email, employee_id))
+
+            # Обновляем текущего пользователя
+            full_name = f"{last_name} {first_name}"
+            if patronymic:
+                full_name += f" {patronymic}"
+            
+            self.current_user['full_name'] = full_name
+            
+            # Обновляем метку информации о пользователе
+            self.user_info_label.setText(f"👤 Вы вошли как: {full_name} ({self.current_user.get('role', 'user').upper()})")
+
+            QMessageBox.information(self, "Успех", "✅ Изменения успешно сохранены!")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при сохранении:\n{str(e)}")
+            print(f"Ошибка сохранения профиля: {e}")
 
     def load_requests_data(self):
         """Загрузка списка запросов на выдачу активов"""
