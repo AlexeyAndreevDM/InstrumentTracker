@@ -1,0 +1,3 @@
+([('InstrumentTracker',
+   '/Users/aleksej/PycharmProjects/InstrumentTracker/dist/InstrumentTracker',
+   'EXECUTABLE')],)

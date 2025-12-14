@@ -273,5 +273,23 @@
     "details": {
       "role": "admin"
     }
+  },
+  {
+    "timestamp": "2025-12-14T11:06:23.860106",
+    "user_id": 0,
+    "username": "admin",
+    "action": "user_login",
+    "details": {
+      "role": "admin"
+    }
+  },
+  {
+    "timestamp": "2025-12-14T11:07:38.649130",
+    "user_id": 1,
+    "username": "user1",
+    "action": "user_login",
+    "details": {
+      "role": "user"
+    }
   }
 ]
