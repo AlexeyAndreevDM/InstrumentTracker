@@ -220,7 +220,7 @@ class MainWindow(QMainWindow):
         # Меню Файл
         file_menu = menubar.addMenu("📁 Файл")
 
-        export_action = QAction("📤 Экспорт данных", self)
+        export_action = QAction("📤 Экспорт", self)
         export_action.setShortcut(QKeySequence("Ctrl+E"))
         export_action.setStatusTip("Экспорт всех данных в CSV")
         export_action.triggered.connect(self.export_all_data)
@@ -237,14 +237,16 @@ class MainWindow(QMainWindow):
         view_menu = menubar.addMenu("👁️ Вид")
         
         # Тёмная тема
-        dark_theme_action = QAction("🌙 Тёмная тема", self)
+        dark_theme_action = QAction("🌙 Тёмная", self)
         dark_theme_action.setShortcut(QKeySequence("Ctrl+D"))
+        dark_theme_action.setStatusTip("Переключить на тёмную тему")
         dark_theme_action.triggered.connect(lambda: self.set_theme('dark'))
         view_menu.addAction(dark_theme_action)
         
         # Светлая тема
-        light_theme_action = QAction("☀️ Светлая тема", self)
+        light_theme_action = QAction("☀️ Светлая", self)
         light_theme_action.setShortcut(QKeySequence("Ctrl+L"))
+        light_theme_action.setStatusTip("Переключить на светлую тему")
         light_theme_action.triggered.connect(lambda: self.set_theme('light'))
         view_menu.addAction(light_theme_action)
         
