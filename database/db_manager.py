@@ -111,7 +111,8 @@ class DatabaseManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Locations (
                 location_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                location_name VARCHAR(100) NOT NULL UNIQUE
+                location_name VARCHAR(100) NOT NULL UNIQUE,
+                is_custom BOOLEAN DEFAULT 0
             )
         ''')
 
@@ -147,6 +148,38 @@ class DatabaseManager:
             )
         ''')
 
+        # Таблица учетных записей пользователей
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS Users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username VARCHAR(50) NOT NULL UNIQUE,
+                password VARCHAR(255) NOT NULL,
+                employee_id INTEGER,
+                role VARCHAR(20) DEFAULT 'user',
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (employee_id) REFERENCES Employees(employee_id)
+            )
+        ''')
+
+        # Таблица запросов на выдачу активов
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS Asset_Requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                employee_id INTEGER NOT NULL,
+                request_date DATETIME NOT NULL,
+                planned_return_date DATE,
+                notes TEXT,
+                status VARCHAR(20) DEFAULT 'pending',
+                approved_by INTEGER,
+                approved_at DATETIME,
+                FOREIGN KEY (asset_id) REFERENCES Assets(asset_id),
+                FOREIGN KEY (employee_id) REFERENCES Employees(employee_id),
+                FOREIGN KEY (approved_by) REFERENCES Users(user_id)
+            )
+        ''')
+
         self.connection.commit()
 
     def _populate_test_data(self):
@@ -163,9 +196,14 @@ class DatabaseManager:
             asset_types = [('Инструмент',), ('Расходник',), ('Измерительный прибор',), ('Электроинструмент',)]
             cursor.executemany('INSERT OR IGNORE INTO Asset_Types (type_name) VALUES (?)', asset_types)
 
-            # Местоположения
-            locations = [('Склад №1',), ('Цех №5',), ('Лаборатория',), ('Мастерская',)]
-            cursor.executemany('INSERT OR IGNORE INTO Locations (location_name) VALUES (?)', locations)
+            # Местоположения - стандартные без пометки custom
+            locations = [
+                ('Склад №1', 0),
+                ('Цех №5', 0),
+                ('Лаборатория', 0),
+                ('Мастерская', 0)
+            ]
+            cursor.executemany('INSERT OR IGNORE INTO Locations (location_name, is_custom) VALUES (?, ?)', locations)
 
             # Сотрудники (только если их нет)
             cursor.execute("SELECT COUNT(*) FROM Employees")
