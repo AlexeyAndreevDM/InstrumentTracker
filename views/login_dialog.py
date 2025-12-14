@@ -282,14 +282,26 @@ class LoginDialog(QDialog):
     
     def on_register_click(self):
         """Обработчик регистрации нового пользователя"""
-        employee_id = self.register_employee_combo.currentData()
-        employee_text = self.register_employee_combo.currentText().strip()
-        username = self.register_username_input.text().strip()
-        password = self.register_password_input.text()
+        print("🔵 Начало регистрации пользователя...")
         
-        # Если нет выбранного employee_id, но есть текст - это новый сотрудник
-        if not employee_id and not employee_text:
-            QMessageBox.warning(self, "Ошибка", "Выберите сотрудника или введите ФИО!")
+        try:
+            employee_id = self.register_employee_combo.currentData()
+            employee_text = self.register_employee_combo.currentText().strip()
+            username = self.register_username_input.text().strip()
+            password = self.register_password_input.text()
+            
+            print(f"🔵 employee_id: {employee_id}, employee_text: {employee_text}")
+            print(f"🔵 username: {username}, password: {'*' * len(password)}")
+            
+            # Если нет выбранного employee_id, но есть текст - это новый сотрудник
+            if not employee_id and not employee_text:
+                QMessageBox.warning(self, "Ошибка", "Выберите сотрудника или введите ФИО!")
+                return
+        except Exception as e:
+            print(f"❌ Ошибка при получении данных формы: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при получении данных:\n{str(e)}")
             return
         
         # Если employee_id не выбран, но есть текст - создаём нового сотрудника
@@ -339,10 +351,14 @@ class LoginDialog(QDialog):
             return
         
         try:
+            print("🔵 Хеширование пароля...")
             # Создаем пароль (хешируем)
             password_hash = self._hash_password(password)
+            print(f"🔵 Пароль захеширован: {password_hash[:20]}...")
             
             # Добавляем пользователя в БД
+            from datetime import datetime
+            print("🔵 Вставка пользователя в БД...")
             query = """
             INSERT INTO Users (username, password, employee_id, role, created_at)
             VALUES (?, ?, ?, ?, ?)
@@ -351,6 +367,7 @@ class LoginDialog(QDialog):
                 query,
                 (username, password_hash, employee_id, 'user', datetime.now().isoformat())
             )
+            print(f"✅ Пользователь создан с ID: {user_id}")
             
             QMessageBox.information(
                 self, 
@@ -364,7 +381,10 @@ class LoginDialog(QDialog):
             self.login_password_input.setFocus()
             
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при создании аккаунта:\n{str(e)}")
+            print(f"❌ Критическая ошибка при создании аккаунта: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при создании аккаунта:\n{str(e)}\n\nПодробности в консоли.")
     
     def _verify_credentials(self, username, password):
         """Проверка учетных данных"""
