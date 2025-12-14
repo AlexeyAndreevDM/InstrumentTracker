@@ -279,6 +279,41 @@ class NotificationManager:
         self.check_timer.timeout.connect(self._check_deadlines)
         self.notification_widgets = []
         
+        # Email-уведомления
+        from email_notifier import EmailNotifier
+        self.email_notifier = EmailNotifier()
+        
+        # Таймер для email (проверка раз в час)
+        self.email_timer = QTimer()
+        self.email_timer.setSingleShot(False)
+        self.email_timer.timeout.connect(self._check_and_send_emails)
+        
+    def configure_email(self, sender_email, sender_password):
+        """Настроить параметры email-отправителя"""
+        self.email_notifier.configure(sender_email, sender_password)
+        print(f"Email-уведомления настроены: {sender_email}")
+        
+    def start_email_checking(self, interval_ms=3600000):
+        """Запустить проверку и отправку email (по умолчанию раз в час)"""
+        if self.email_notifier.enabled:
+            print("Запуск проверки email-уведомлений...")
+            self.email_timer.start(interval_ms)
+            # Сразу проверяем при старте
+            self._check_and_send_emails()
+        else:
+            print("Email-уведомления не настроены")
+            
+    def stop_email_checking(self):
+        """Остановить проверку email"""
+        self.email_timer.stop()
+        
+    def _check_and_send_emails(self):
+        """Проверить сроки и отправить email-уведомления"""
+        try:
+            self.email_notifier.check_and_send_notifications()
+        except Exception as e:
+            print(f"Ошибка при отправке email-уведомлений: {e}")
+        
     def start_checking(self, interval_ms=60000):
         """Запустить периодическую проверку сроков (по умолчанию каждую минуту)"""
         print("Запуск проверки сроков уведомлений...")

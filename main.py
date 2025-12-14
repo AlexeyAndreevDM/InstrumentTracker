@@ -55,6 +55,13 @@ class MainWindow(QMainWindow):
         # Инициализация менеджера уведомлений
         self.notification_manager = NotificationManager(self)
         self.notification_manager.start_checking(interval_ms=60000)  # Проверка каждую минуту
+        
+        # ВРЕМЕННО: Настройка email для тестирования
+        # TODO: Добавить настройку через интерфейс
+        # self.notification_manager.configure_email('your-email@yandex.ru', 'your-app-password')
+        # self.notification_manager.start_email_checking(interval_ms=3600000)  # Проверка раз в час
+        self.notification_manager.configure_email('AlexAndreev132@yandex.ru', 'пароль_приложения')
+        self.notification_manager.start_email_checking(interval_ms=3600000)  # раз в час
 
         # Флаг для показа уведомлений при первом показе окна
         self._startup_notifications_shown = False
