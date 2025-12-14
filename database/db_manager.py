@@ -18,26 +18,30 @@ class DatabaseManager:
     def _get_db_path(self):
         """Получить путь к БД в зависимости от режима запуска"""
         if getattr(sys, 'frozen', False):
-            # Приложение запущено как bundle
+            # Приложение запущено как bundle/exe
             if sys.platform == 'darwin':
                 # macOS: сохраняем БД в Application Support
-                app_support = os.path.expanduser('~/Library/Application Support/InstrumentTracker')
-                os.makedirs(app_support, exist_ok=True)
-                db_path = os.path.join(app_support, 'inventory.db')
-                
-                # Копируем начальную БД если её нет
-                if not os.path.exists(db_path):
-                    bundle_db = os.path.join(sys._MEIPASS, 'inventory.db')
-                    if os.path.exists(bundle_db):
-                        import shutil
-                        shutil.copy2(bundle_db, db_path)
-                        print(f"📋 Скопирована БД из bundle: {db_path}")
-                    else:
-                        print(f"📋 БД в bundle не найдена, будет создана новая: {db_path}")
-                return db_path
+                app_data = os.path.expanduser('~/Library/Application Support/InstrumentTracker')
+            elif sys.platform == 'win32':
+                # Windows: сохраняем БД в AppData/Roaming
+                app_data = os.path.join(os.environ.get('APPDATA', ''), 'InstrumentTracker')
             else:
-                # Windows/Linux: рядом с exe
-                return os.path.join(os.path.dirname(sys.executable), 'inventory.db')
+                # Linux: сохраняем в ~/.local/share
+                app_data = os.path.expanduser('~/.local/share/InstrumentTracker')
+            
+            os.makedirs(app_data, exist_ok=True)
+            db_path = os.path.join(app_data, 'inventory.db')
+            
+            # Копируем начальную БД если её нет
+            if not os.path.exists(db_path):
+                bundle_db = os.path.join(sys._MEIPASS, 'inventory.db')
+                if os.path.exists(bundle_db):
+                    import shutil
+                    shutil.copy2(bundle_db, db_path)
+                    print(f"📋 Скопирована БД из bundle: {db_path}")
+                else:
+                    print(f"📋 БД в bundle не найдена, будет создана новая: {db_path}")
+            return db_path
         else:
             # Разработка: в текущей директории
             return 'inventory.db'
