@@ -220,8 +220,9 @@ class MainWindow(QMainWindow):
         # Меню Файл
         file_menu = menubar.addMenu("📁 Файл")
 
-        export_action = QAction("📤 Экспорт всех данных", self)
+        export_action = QAction("📤 Экспорт данных", self)
         export_action.setShortcut(QKeySequence("Ctrl+E"))
+        export_action.setStatusTip("Экспорт всех данных в CSV")
         export_action.triggered.connect(self.export_all_data)
         file_menu.addAction(export_action)
 
@@ -258,8 +259,9 @@ class MainWindow(QMainWindow):
         # Меню Справка
         help_menu = menubar.addMenu("❓ Справка")
 
-        help_action = QAction("📘 Руководство пользователя", self)
+        help_action = QAction("📘 Руководство", self)
         help_action.setShortcut(QKeySequence.StandardKey.HelpContents)  # F1
+        help_action.setStatusTip("Открыть руководство пользователя")
         help_action.triggered.connect(self.show_help)
         help_menu.addAction(help_action)
 
@@ -545,16 +547,21 @@ class MainWindow(QMainWindow):
         # Панель кнопок
         buttons_layout = QHBoxLayout()
 
-        self.btn_add = QPushButton("➕ Добавить актив")
+        self.btn_add = QPushButton("➕ Добавить")
         self.btn_add.setShortcut(QKeySequence("Ctrl+N"))
-        self.btn_edit = QPushButton("✏️ Редактировать")
+        self.btn_add.setToolTip("Добавить новый актив (Ctrl+N)")
+        self.btn_edit = QPushButton("✏️ Изменить")
         self.btn_edit.setShortcut(QKeySequence("Ctrl+E"))
+        self.btn_edit.setToolTip("Редактировать актив (Ctrl+E)")
         self.btn_delete = QPushButton("🗑️ Удалить")
         self.btn_delete.setShortcut(QKeySequence.StandardKey.Delete)
-        self.btn_import = QPushButton("📥 Импорт из Excel")
+        self.btn_delete.setToolTip("Удалить актив (Delete)")
+        self.btn_import = QPushButton("📥 Импорт")
         self.btn_import.setShortcut(QKeySequence("Ctrl+I"))
+        self.btn_import.setToolTip("Импорт из Excel (Ctrl+I)")
         self.btn_refresh = QPushButton("🔄 Обновить")
         self.btn_refresh.setShortcut(QKeySequence("F5"))
+        self.btn_refresh.setToolTip("Обновить данные (F5)")
 
         buttons_layout.addWidget(self.btn_add)
         buttons_layout.addWidget(self.btn_edit)
@@ -621,14 +628,18 @@ class MainWindow(QMainWindow):
         # Панель кнопок операций
         operations_layout = QHBoxLayout()
 
-        self.btn_issue = QPushButton("📤 Выдать актив")
+        self.btn_issue = QPushButton("📤 Выдать")
         self.btn_issue.setShortcut(QKeySequence("Ctrl+Shift+I"))
-        self.btn_return = QPushButton("📥 Вернуть актив")
+        self.btn_issue.setToolTip("Выдать актив (Ctrl+Shift+I)")
+        self.btn_return = QPushButton("📥 Вернуть")
         self.btn_return.setShortcut(QKeySequence("Ctrl+Shift+R"))
-        self.btn_request = QPushButton("📝 Запросить актив")  # Новая кнопка для пользователей
+        self.btn_return.setToolTip("Вернуть актив (Ctrl+Shift+R)")
+        self.btn_request = QPushButton("📝 Запросить")  # Новая кнопка для пользователей
         self.btn_request.setShortcut(QKeySequence("Ctrl+Shift+A"))
-        self.btn_history = QPushButton("🔄 Обновить историю")
+        self.btn_request.setToolTip("Запросить актив (Ctrl+Shift+A)")
+        self.btn_history = QPushButton("🔄 Обновить")
         self.btn_history.setShortcut(QKeySequence("F5"))
+        self.btn_history.setToolTip("Обновить историю операций (F5)")
 
         operations_layout.addWidget(self.btn_issue)
         operations_layout.addWidget(self.btn_return)
