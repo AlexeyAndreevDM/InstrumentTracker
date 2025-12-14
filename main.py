@@ -59,9 +59,7 @@ class MainWindow(QMainWindow):
         
         # ВРЕМЕННО: Настройка email для тестирования
         # TODO: Добавить настройку через интерфейс
-        # self.notification_manager.configure_email('your-email@yandex.ru', 'your-app-password')
-        # self.notification_manager.start_email_checking(interval_ms=3600000)  # Проверка раз в час
-        self.notification_manager.configure_email('AlexAndreev132@yandex.ru', 'пароль_приложения')
+        self.notification_manager.configure_email('andreevaleksej477@gmail.com', 'pgxjdmyafaawpkwo')
         self.notification_manager.start_email_checking(interval_ms=3600000)  # раз в час
 
         # Флаг для показа уведомлений при первом показе окна
@@ -1921,7 +1919,11 @@ class MainWindow(QMainWindow):
             issues_text += f"  • {asset_name} — {return_date} ({status})\n"
         
         issues_label = QLabel(issues_text)
-        issues_label.setStyleSheet("background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;")
+        # Стиль зависит от текущей темы
+        if self.current_theme == 'dark':
+            issues_label.setStyleSheet("background-color: #2b2b2b; color: #ffffff; padding: 10px; border-radius: 5px; font-family: monospace;")
+        else:
+            issues_label.setStyleSheet("background-color: #f5f5f5; color: #000000; padding: 10px; border-radius: 5px; font-family: monospace;")
         dialog_layout.addWidget(issues_label)
         
         # Выбор темы письма
@@ -1961,13 +1963,24 @@ class MainWindow(QMainWindow):
         sent_count = 0
         failed_count = 0
         
+        print(f"Отправка писем: is_overdue={is_overdue}, всего инструментов={len(active_issues)}")
+        
         for asset_name, return_date, days_until in active_issues:
-            # Фильтруем по выбранной теме
-            if is_overdue and days_until >= 1:
-                continue  # Пропускаем не просроченные
-            if not is_overdue and days_until < 0:
-                continue  # Пропускаем просроченные
+            print(f"  Проверка: {asset_name}, days_until={days_until}")
             
+            # Фильтруем по выбранной теме
+            if is_overdue:
+                # Тема "просрочка" - отправляем только для days_until <= 0 (сегодня или просрочено)
+                if days_until > 0:
+                    print(f"    Пропускаем (не просрочен)")
+                    continue
+            else:
+                # Тема "приближается срок" - отправляем только для days_until > 0 (будущие даты)
+                if days_until <= 0:
+                    print(f"    Пропускаем (уже просрочен или сегодня)")
+                    continue
+            
+            print(f"    Отправка письма...")
             try:
                 success = self.notification_manager.email_notifier.send_deadline_warning(
                     employee_email=email,
@@ -1984,7 +1997,11 @@ class MainWindow(QMainWindow):
                     
             except Exception as e:
                 print(f"Ошибка отправки письма: {e}")
+                import traceback
+                traceback.print_exc()
                 failed_count += 1
+        
+        print(f"Итого: отправлено={sent_count}, ошибок={failed_count}")
         
         # Показываем результат
         if sent_count > 0:
@@ -1996,11 +2013,16 @@ class MainWindow(QMainWindow):
                 f"Получатель: {employee_name} ({email})"
             )
         else:
+            error_details = ""
+            if failed_count == 0:
+                error_details = "Не найдено инструментов для выбранной темы письма.\n\nПопробуйте выбрать другую тему."
+            else:
+                error_details = f"Произошли ошибки при отправке ({failed_count} ошибок).\n\nПроверьте консоль для деталей.\n\nВозможные причины:\n• Email-уведомления не настроены\n• Неверные SMTP-настройки\n• Проблемы с сетью"
+            
             QMessageBox.warning(
                 self,
                 "Письма не отправлены",
-                f"Не найдено инструментов для выбранной темы письма.\n\n"
-                f"{'Попробуйте выбрать другую тему.' if failed_count == 0 else 'Произошли ошибки при отправке.'}"
+                error_details
             )
 
     def setup_user_profile_tab(self):
@@ -2069,7 +2091,11 @@ class MainWindow(QMainWindow):
         form_layout.addWidget(QLabel("Должность:"), row, 0)
         self.profile_position = QLineEdit(position_name if position_name else "Не указана")
         self.profile_position.setReadOnly(True)
-        self.profile_position.setStyleSheet("background-color: #f0f0f0;")
+        # Стиль зависит от текущей темы
+        if self.current_theme == 'dark':
+            self.profile_position.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
+        else:
+            self.profile_position.setStyleSheet("background-color: #f0f0f0; color: #000000;")
         form_layout.addWidget(self.profile_position, row, 1)
 
         # Поле: Телефон
@@ -2225,16 +2251,36 @@ class MainWindow(QMainWindow):
         try:
             employee_id = self.current_user.get('employee_id')
             
+            if not employee_id:
+                QMessageBox.critical(self, "Ошибка", "Не удалось определить ID сотрудника")
+                return
+            
             # Применяем capitalize()
             last_name = last_name.capitalize()
             first_name = first_name.capitalize()
             patronymic = patronymic.capitalize() if patronymic else None
 
+            print(f"Сохранение профиля: employee_id={employee_id}, last_name={last_name}, first_name={first_name}, patronymic={patronymic}, phone={phone}, email={email}")
+            
             self.db.execute_update("""
                 UPDATE Employees 
                 SET last_name = ?, first_name = ?, patronymic = ?, phone = ?, email = ?
                 WHERE employee_id = ?
             """, (last_name, first_name, patronymic, phone, email, employee_id))
+            
+            print(f"Профиль успешно сохранен в БД")
+            
+            # Проверяем сохранение
+            verify_data = self.db.execute_query("""
+                SELECT last_name, first_name, patronymic, phone, email
+                FROM Employees
+                WHERE employee_id = ?
+            """, (employee_id,))
+            
+            if verify_data:
+                print(f"Проверка сохранения: {verify_data[0]}")
+            else:
+                print("Предупреждение: не удалось проверить сохраненные данные")
 
             # Обновляем текущего пользователя
             full_name = f"{last_name} {first_name}"
@@ -2251,6 +2297,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при сохранении:\n{str(e)}")
             print(f"Ошибка сохранения профиля: {e}")
+            import traceback
+            traceback.print_exc()
 
     def load_requests_data(self):
         """Загрузка списка запросов на выдачу активов"""
@@ -2374,11 +2422,25 @@ class MainWindow(QMainWindow):
                 ('approved', int(self.current_user.get('user_id', 0)), datetime.now().isoformat(), request_id)
             )
 
-            QMessageBox.information(self, "Успех", "✅ Запрос одобрен и актив выдан!")
+            # Обновляем все данные для отображения изменений
             self._refresh_all_data()
+            
+            # Принудительно обновляем таблицу запросов
+            if hasattr(self, 'requests_table'):
+                self.load_requests_data()
+            
+            # Обновляем историю операций
+            if hasattr(self, 'history_table'):
+                self.load_history_data()
+            
+            print(f"Запрос {request_id} одобрен: актив {asset_id} выдан сотруднику {employee_id}")
+            
+            QMessageBox.information(self, "Успех", "✅ Запрос одобрен и актив выдан!")
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при одобрении запроса:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def reject_request(self):
         """Отклонение запроса на выдачу актива"""

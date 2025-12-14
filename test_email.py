@@ -13,8 +13,15 @@ def test_email_configuration():
     notifier = EmailNotifier()
     
     # Настройка (замените на реальные данные)
-    sender_email = input("Введите email отправителя (например, your-email@yandex.ru): ").strip()
+    sender_email = input("Введите email отправителя (AlexAndreev132@yandex.ru): ").strip()
+    if not sender_email:
+        sender_email = "AlexAndreev132@yandex.ru"
+    
     sender_password = input("Введите пароль приложения: ").strip()
+    
+    if not sender_password:
+        print("Ошибка: пароль не может быть пустым!")
+        return False
     
     notifier.configure(sender_email, sender_password)
     

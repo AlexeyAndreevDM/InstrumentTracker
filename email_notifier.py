@@ -33,10 +33,34 @@ class EmailNotifier:
         self.enabled = False
         
     def configure(self, sender_email, sender_password):
-        """Настроить параметры отправителя"""
+        """Настроить параметры отправителя с автоопределением SMTP-сервера"""
         self.sender_email = sender_email
         self.sender_password = sender_password
         self.enabled = True if sender_email and sender_password else False
+        
+        # Автоопределение SMTP-сервера по домену email
+        if sender_email:
+            domain = sender_email.split('@')[-1].lower()
+            
+            if 'gmail.com' in domain:
+                self.smtp_server = 'smtp.gmail.com'
+                self.smtp_port = 587
+                print(f"Настроен Gmail SMTP: {self.smtp_server}:{self.smtp_port}")
+            elif 'yandex' in domain or 'ya.ru' in domain:
+                self.smtp_server = 'smtp.yandex.ru'
+                self.smtp_port = 587
+                print(f"Настроен Yandex SMTP: {self.smtp_server}:{self.smtp_port}")
+            elif 'mail.ru' in domain or 'inbox.ru' in domain or 'bk.ru' in domain or 'list.ru' in domain:
+                self.smtp_server = 'smtp.mail.ru'
+                self.smtp_port = 587
+                print(f"Настроен Mail.ru SMTP: {self.smtp_server}:{self.smtp_port}")
+            elif 'outlook.com' in domain or 'hotmail.com' in domain or 'live.com' in domain:
+                self.smtp_server = 'smtp-mail.outlook.com'
+                self.smtp_port = 587
+                print(f"Настроен Outlook SMTP: {self.smtp_server}:{self.smtp_port}")
+            else:
+                print(f"Предупреждение: неизвестный домен {domain}, используется текущий SMTP: {self.smtp_server}:{self.smtp_port}")
+                print(f"Если письма не отправляются, укажите SMTP-сервер вручную")
         
     def send_email(self, recipient_email, subject, html_body, plain_body=None):
         """
@@ -78,16 +102,47 @@ class EmailNotifier:
             msg.attach(part2)
             
             # Отправка через SMTP
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()  # Шифрование
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(msg)
+            print(f"Подключение к SMTP: {self.smtp_server}:{self.smtp_port}")
+            print(f"От: {self.sender_email}, Кому: {recipient_email}")
+            
+            try:
+                # Попытка 1: SMTP с STARTTLS (стандартный метод)
+                with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
+                    server.set_debuglevel(0)  # Отключаем подробный вывод
+                    print("Инициализация TLS...")
+                    server.starttls()
+                    print("Аутентификация...")
+                    server.login(self.sender_email, self.sender_password)
+                    print("Отправка сообщения...")
+                    server.send_message(msg)
+                    
+                print(f"✓ Email отправлен: {recipient_email} - {subject}")
+                return True
                 
-            print(f"Email отправлен: {recipient_email} - {subject}")
-            return True
+            except (smtplib.SMTPException, ConnectionError, OSError) as smtp_error:
+                print(f"Ошибка SMTP с STARTTLS: {smtp_error}")
+                print("Попытка подключения через SMTP_SSL (порт 465)...")
+                
+                try:
+                    # Попытка 2: SMTP_SSL на порту 465
+                    with smtplib.SMTP_SSL(self.smtp_server, 465, timeout=10) as server:
+                        server.set_debuglevel(0)
+                        print("Аутентификация через SSL...")
+                        server.login(self.sender_email, self.sender_password)
+                        print("Отправка сообщения...")
+                        server.send_message(msg)
+                        
+                    print(f"✓ Email отправлен через SSL: {recipient_email} - {subject}")
+                    return True
+                    
+                except Exception as ssl_error:
+                    print(f"✗ Ошибка SMTP_SSL: {ssl_error}")
+                    raise  # Пробросим для общего обработчика
             
         except Exception as e:
-            print(f"Ошибка отправки email на {recipient_email}: {e}")
+            print(f"✗ Критическая ошибка отправки email на {recipient_email}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def send_deadline_warning(self, employee_email, employee_name, asset_name, deadline_date, days_until):
